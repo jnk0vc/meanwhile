@@ -1,0 +1,15 @@
+{
+  "name": "meanwhile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Codeが作業している間だけ、同じく待っている誰かと匿名で1対1チャットできるmod",
+  "license": "MIT",
+  "scripts": {
+    "install:all": "npm --prefix sidecar ci && npm --prefix server ci",
+    "build": "npm --prefix sidecar run build",
+    "typecheck": "npm --prefix sidecar run typecheck && npm --prefix server run typecheck",
+    "test": "npm --prefix server test && npm --prefix sidecar test && claude plugin test plugins/meanwhile",
+    "e2e": "node scripts/e2e.mjs",
+    "dev:server": "npm --prefix server run dev"
+  }
+}

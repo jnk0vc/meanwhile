@@ -1,0 +1,24 @@
+{
+  "name": "meanwhile-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Meanwhile modのWebRTC / シグナリングを受け持つNodeサイドカー",
+  "license": "MIT",
+  "dependencies": {
+    "werift": "0.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --minify --legal-comments=linked --outfile=../plugins/meanwhile/sidecar/meanwhile-sidecar.mjs --banner:js=\"import { createRequire as __mwRequire } from 'node:module'; const require = __mwRequire(import.meta.url);\"",
+    "typecheck": "tsc -p .",
+    "test": "node --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22.4"
+  }
+}

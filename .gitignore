@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+.wrangler/
+.dev.vars
+# Claude Code がmodを読み込むたびに置く型(手元専用)
+plugins/meanwhile/.claude-plugin/types/

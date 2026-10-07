@@ -1,0 +1,16 @@
+{
+  "name": "meanwhile",
+  "owner": { "name": "jnk0vc", "url": "https://github.com/jnk0vc" },
+  "metadata": {
+    "description": "Meanwhile: Claude Codeの待ち時間に、同じく待っている誰かと匿名で話すmod"
+  },
+  "plugins": [
+    {
+      "name": "meanwhile",
+      "source": "./plugins/meanwhile",
+      "description": "Claude Codeが作業している間だけ、同じく待っている誰かと匿名で1対1チャットできるmod。言語が違えばHaikuが翻訳する",
+      "version": "0.1.0",
+      "category": "productivity"
+    }
+  ]
+}

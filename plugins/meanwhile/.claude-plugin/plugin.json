@@ -1,0 +1,54 @@
+{
+  "name": "meanwhile",
+  "version": "0.1.0",
+  "description": "Claude Codeが作業している間だけ、同じく待っている誰かと匿名で1対1チャットできるmod。言語が違えばHaikuが翻訳する",
+  "author": { "name": "jnk0vc", "url": "https://github.com/jnk0vc" },
+  "homepage": "https://github.com/jnk0vc/meanwhile",
+  "repository": "https://github.com/jnk0vc/meanwhile",
+  "license": "MIT",
+  "keywords": ["mod", "pane", "chat", "webrtc", "translation"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "server": {
+      "type": "string",
+      "title": "Matching server",
+      "description": "マッチングサーバーの起点(wss://…)。本文は通らず、接続情報だけを受け渡す",
+      "default": ""
+    },
+    "matchDelay": {
+      "type": "string",
+      "title": "Seconds before matching",
+      "description": "プロンプト送信から、相手を探し始めるまでの秒数",
+      "options": ["15", "30", "45", "60", "90", "120"],
+      "default": "30"
+    },
+    "finalSeconds": {
+      "type": "string",
+      "title": "Seconds for the last word",
+      "description": "Claudeの作業が終わってから、最後の一言を送れる秒数",
+      "options": ["30", "60", "90", "120", "180"],
+      "default": "60"
+    },
+    "language": {
+      "type": "string",
+      "title": "My language",
+      "description": "自分の言語。autoはOSのロケールを使う",
+      "options": ["auto", "ja", "en", "zh", "ko", "es", "fr", "de", "pt", "it", "ru", "uk", "pl", "nl", "tr", "ar", "hi", "id", "vi", "th"],
+      "default": "auto"
+    },
+    "display": {
+      "type": "string",
+      "title": "Translation display",
+      "description": "bothは翻訳＋原文、translatedは翻訳のみ、originalは原文のみ",
+      "options": ["both", "translated", "original"],
+      "default": "both"
+    },
+    "sound": {
+      "type": "string",
+      "title": "Sound",
+      "description": "つながったときとメッセージが届いたときに音を鳴らす",
+      "options": ["off", "on"],
+      "default": "off"
+    }
+  }
+}
