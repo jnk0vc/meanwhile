@@ -8,7 +8,7 @@ Claude Codeが作業している間だけ、同じく待っている誰かと匿
 
 動画(mp4): [media/meanwhile-demo.mp4](media/meanwhile-demo.mp4)
 
-> **試験運用中です。** マッチングサーバーは`wss://meanwhile-match.jankovic.workers.dev`で動いています。
+> **試験運用中です。** マッチングサーバーは`wss://meanwhile.jank0vic.com`で動いています。
 
 設計書: [docs/design.md](docs/design.md)
 
@@ -61,7 +61,7 @@ modの実行環境にはソケットがないため、WebRTCとWebSocketはサ�
 /plugin install meanwhile@meanwhile
 ```
 
-マッチングサーバーは、公開中のもの(`wss://meanwhile-match.jankovic.workers.dev`)を最初から使います。自分で立てたサーバーを使うときは、`/config`でmeanwhileの`server`を書き換えます。
+マッチングサーバーは、公開中のもの(`wss://meanwhile.jank0vic.com`)を最初から使います。自分で立てたサーバーを使うときは、`/config`でmeanwhileの`server`を書き換えます。
 
 既定はオフです。`/meanwhile`を実行すると、入力欄の上の帯に同意画面が出ます。同意画面では次の6点を示します。
 
@@ -78,7 +78,7 @@ modの実行環境にはソケットがないため、WebRTCとWebSocketはサ�
 
 | 設定(`/config`) | 既定値 | 選択肢 |
 | --- | --- | --- |
-| `server` | `wss://meanwhile-match.jankovic.workers.dev` | マッチングサーバーの起点(`wss://…`) |
+| `server` | `wss://meanwhile.jank0vic.com` | マッチングサーバーの起点(`wss://…`) |
 | `matchDelay` | 30 | 5 / 15 / 30 / 45 / 60 / 90 / 120(秒) |
 | `finalSeconds` | 60 | 30 / 60 / 90 / 120 / 180(秒) |
 | `language` | auto | auto / ja / en / zh / ko ほか。autoはmacOSならシステム設定の言語、それ以外は`LANG` |

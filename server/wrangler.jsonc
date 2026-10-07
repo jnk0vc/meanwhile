@@ -8,5 +8,8 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }],
   "vars": { "POW_BITS": "18" },
+  "routes": [{ "pattern": "meanwhile.jank0vic.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
   "observability": { "enabled": true, "head_sampling_rate": 0.1 }
 }
