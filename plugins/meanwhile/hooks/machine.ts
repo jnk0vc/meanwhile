@@ -11,7 +11,7 @@ export type Settings = {
 export type MachineEvent =
   | { type: 'ask-consent' }
   | { type: 'cancel-consent' }
-  | { type: 'enable' }
+  | { type: 'enable'; now: number }
   | { type: 'disable' }
   | { type: 'work-start'; now: number }
   | { type: 'work-end'; now: number }
@@ -108,9 +108,18 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
       return view.phase === 'off' ? [{ ...view, phase: 'consent' }, []] : [view, []]
     case 'cancel-consent':
       return view.phase === 'consent' ? [{ ...view, phase: 'off' }, []] : [view, []]
-    case 'enable':
+    case 'enable': {
       if (view.phase !== 'off' && view.phase !== 'consent') return [view, []]
-      return [{ ...view, phase: 'idle', notice: null, isPaused: false }, [{ do: 'save-enabled', value: true }]]
+      const saved: Effect = { do: 'save-enabled', value: true }
+      // Claudeの作業中に有効にしたら、その時点から数え始める(次のプロンプトを待たない)
+      if (view.isWorking) {
+        return [
+          { ...view, phase: 'working', notice: null, isPaused: false, deadline: event.now + settings.matchDelayMs, span: settings.matchDelayMs },
+          [saved, { do: 'arm', ms: settings.matchDelayMs, timer: 'match' }],
+        ]
+      }
+      return [{ ...view, phase: 'idle', notice: null, isPaused: false }, [saved]]
+    }
     case 'disable': {
       const effects: Effect[] = [{ do: 'disarm' }, { do: 'save-enabled', value: false }]
       if (view.phase === 'chatting' || view.phase === 'final') effects.push({ do: 'final', text: null })

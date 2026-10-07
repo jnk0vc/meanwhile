@@ -43,6 +43,18 @@ describe('状態遷移', () => {
     expect(effects).toContainEqual({ do: 'announce' })
   })
 
+  test('Claudeの作業中に有効にしたら、その時点から数え始める', () => {
+    const off = initialView('ja', false)
+    const [working] = run([{ type: 'work-start', now: 0 }], off)
+    expect(working.phase).toBe('off')
+    const [view, effects] = run([{ type: 'enable', now: 5_000 }], working)
+    expect(view.phase).toBe('working')
+    expect(view.deadline).toBe(35_000)
+    expect(effects).toContainEqual({ do: 'arm', ms: 30_000, timer: 'match' })
+    const [idle] = run([{ type: 'enable', now: 0 }], off)
+    expect(idle.phase).toBe('idle')
+  })
+
   test('30秒未満で終わるタスクではマッチングしない', () => {
     const [view, effects] = run([{ type: 'work-start', now: 0 }, { type: 'work-end', now: 5_000 }, { type: 'match-delay-passed' }])
     expect(view.phase).toBe('idle')

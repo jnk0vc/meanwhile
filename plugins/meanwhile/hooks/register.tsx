@@ -408,7 +408,7 @@ async function onSidecar($: EngineInterface, event: SidecarEvent): Promise<void>
 
 async function agree($: EngineInterface): Promise<void> {
   await $.store.set(STORE_CONSENT, { v: CONSENT_VERSION, at: await $.clock.now() })
-  await dispatch($, { type: 'enable' })
+  await dispatch($, { type: 'enable', now: await $.clock.now() })
 }
 
 /** 「返信」: 本体の入力欄の先頭に「>> 」を足す。打ちかけの下書きは残す */
@@ -522,7 +522,7 @@ export const register: Register = (on, options) => {
     const { phase } = await read($, view)
     if (phase !== 'off' && phase !== 'consent') return { text: copy.enabled }
     if (await isConsented($)) {
-      await dispatch($, { type: 'enable' })
+      await dispatch($, { type: 'enable', now: await $.clock.now() })
       return { text: copy.enabled }
     }
     // 同意画面は入力欄の上の帯に出す
