@@ -68,30 +68,39 @@ describe('状態遷移', () => {
     expect(effects).toContainEqual({ do: 'leave' })
   })
 
-  test('チャット中に自分の作業が終わると「最後の一言」になり、送れば退室してログが消える', () => {
-    const [final, armed] = run([...chatting, { type: 'peer-chat', id: 'p1', text: 'hi', warnings: [], now: 1 }, { type: 'work-end', now: 50_000 }])
-    expect(final.phase).toBe('final')
-    expect(final.deadline).toBe(110_000)
-    expect(armed).toContainEqual({ do: 'arm', ms: 60_000, timer: 'final' })
+  test('チャット中に自分の作業が終わっても会話は続き、知らせだけ出す', () => {
+    const [view, effects] = run([...chatting, { type: 'peer-chat', id: 'p1', text: 'hi', warnings: [], now: 1 }, { type: 'work-end', now: 50_000 }])
+    expect(view.phase).toBe('chatting')
+    expect(view.isWorking).toBe(false)
+    expect(view.lines).toHaveLength(1)
+    expect(effects.filter(e => e.do === 'announce')).toHaveLength(2)
+    expect(effects.some(e => e.do === 'arm' && e.timer === 'final')).toBe(false)
+  })
 
-    const [after, effects] = run([{ type: 'my-final', text: 'またね' }], final)
-    expect(after.phase).toBe('idle')
-    expect(after.lines).toHaveLength(0)
-    expect(effects).toContainEqual({ do: 'final', text: 'またね' })
+  test('[戻る]を押すと、作業中でも作業後でも最後の一言の場面に入り、送れば退室してログが消える', () => {
+    for (const before of [chatting, [...chatting, { type: 'work-end', now: 40_000 } as MachineEvent]]) {
+      const [final, armed] = run([...before, { type: 'go-back', now: 50_000 }])
+      expect(final.phase).toBe('final')
+      expect(final.deadline).toBe(110_000)
+      expect(armed).toContainEqual({ do: 'arm', ms: 60_000, timer: 'final' })
+      const [after, effects] = run([{ type: 'my-final', text: 'またね' }], final)
+      expect(after.phase).toBe('idle')
+      expect(after.lines).toHaveLength(0)
+      expect(effects).toContainEqual({ do: 'final', text: 'またね' })
+    }
   })
 
   test('最後の一言は時間切れならスキップとして送る', () => {
-    const [final] = run([...chatting, { type: 'work-end', now: 50_000 }])
+    const [final] = run([...chatting, { type: 'go-back', now: 50_000 }])
     const [after, effects] = run([{ type: 'final-timeout' }], final)
     expect(after.phase).toBe('idle')
     expect(effects).toContainEqual({ do: 'final', text: null })
   })
 
-  test('最後の一言を書く前に次のプロンプトを送ったら、会話を続ける', () => {
-    const [final] = run([...chatting, { type: 'work-end', now: 50_000 }])
-    const [view, effects] = run([{ type: 'work-start', now: 55_000 }], final)
-    expect(view.phase).toBe('chatting')
-    expect(effects).toContainEqual({ do: 'disarm' })
+  test('[戻る]は会話中だけ効く', () => {
+    const [view, effects] = run([{ type: 'work-start', now: 0 }, { type: 'go-back', now: 1 }])
+    expect(view.phase).toBe('working')
+    expect(effects.some(e => e.do === 'arm' && e.timer === 'final')).toBe(false)
   })
 
   test('相手が先に終わったら最後の一言を残し、自分が作業中なら次の相手を探す', () => {

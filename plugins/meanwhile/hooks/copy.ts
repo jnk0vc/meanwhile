@@ -16,6 +16,9 @@ export type Copy = {
   bandFinalHint: string
   toastConnected: string
   toastFinal: string
+  toastWorkDone: string
+  workDoneHint: string
+  back: string
   statusTalking: string
   relaySent: string
   relayFinalSent: string
@@ -77,13 +80,16 @@ const ja: Copy = {
   bandFinalHint: '「>> 」で書いた一言を送ると退室します · 時間切れならスキップ扱い',
   toastConnected: 'Someoneとつながりました。「>> 」で話せます',
   toastFinal: 'Claudeの作業が終わりました。「>> 」で最後の一言を送れます',
+  toastWorkDone: 'Claudeの作業が終わりました。話し終わったら帯の[戻る]で戻れます',
+  workDoneHint: 'Claudeの作業が終わりました。話し終わったら[戻る]で戻れます',
+  back: '戻る',
   statusTalking: 'Someoneと会話中',
   relaySent: 'Someoneに送りました(Claudeには渡していません)',
   relayFinalSent: '最後の一言を送って退室しました(Claudeには渡していません)',
   relayNoPeer: 'Someoneとつながっていないので、送らずに止めました(Claudeにも渡していません)',
   relayEmpty: '「>>」のあとに、Someoneに送る文を書いてください',
   stopSearch: '今回は探さない',
-  finalPrompt: 'Claudeの作業が終わりました。最後の一言を1回だけ送れます',
+  finalPrompt: '最後の一言を「>> 」で1回だけ送れます。送るかスキップすると戻ります',
   someone: 'Someone',
   you: 'あなた',
   lastWord: '最後の一言',
@@ -155,13 +161,16 @@ const en: Copy = {
   bandFinalHint: 'Send one line starting with ">> " to leave · Skipped when time runs out',
   toastConnected: 'Connected with Someone. Talk with ">> "',
   toastFinal: 'Claude is done. Send your last word with ">> "',
+  toastWorkDone: 'Claude is done. Press Back in the band when you are ready to go',
+  workDoneHint: 'Claude is done. Press Back when you are ready to go',
+  back: 'Back',
   statusTalking: 'Talking with Someone',
   relaySent: 'Sent to Someone (not passed to Claude)',
   relayFinalSent: 'Sent your last word and left (not passed to Claude)',
   relayNoPeer: 'Not sent: you are not connected with anyone (not passed to Claude either)',
   relayEmpty: 'Write your message for Someone after ">>"',
   stopSearch: 'Not this time',
-  finalPrompt: 'Claude is done. You can send one last word',
+  finalPrompt: 'Send one last word with ">> ". Sending or skipping takes you back',
   someone: 'Someone',
   you: 'You',
   lastWord: 'Last word',

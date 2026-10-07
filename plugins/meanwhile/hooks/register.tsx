@@ -73,7 +73,7 @@ function configFrom(opts: Options): Config {
   return {
     server: (opts.server ?? '').trim().replace(/\/+$/, ''),
     settings: {
-      matchDelayMs: seconds(opts.matchDelay, 30, 15, 120) * 1000,
+      matchDelayMs: seconds(opts.matchDelay, 30, 5, 120) * 1000,
       finalMs: seconds(opts.finalSeconds, 60, 30, 180) * 1000,
     },
     display: opts.display === 'translated' || opts.display === 'original' ? opts.display : 'both',
@@ -219,9 +219,9 @@ async function advance($: EngineInterface): Promise<void> {
  * Claudeの出力を読んでいると気づきにくいのでトーストも出す
  */
 async function announce($: EngineInterface): Promise<void> {
-  const { myLang, phase } = await read($, view)
+  const { myLang, phase, isWorking } = await read($, view)
   const copy = copyFor(myLang)
-  $.ui.toast(phase === 'final' ? copy.toastFinal : copy.toastConnected)
+  $.ui.toast(phase === 'chatting' && !isWorking ? copy.toastWorkDone : phase === 'final' ? copy.toastFinal : copy.toastConnected)
 }
 
 /**
@@ -411,6 +411,11 @@ async function agree($: EngineInterface): Promise<void> {
   await dispatch($, { type: 'enable', now: await $.clock.now() })
 }
 
+/** [戻る]: 最後の一言の場面に入る */
+async function goBack($: EngineInterface): Promise<void> {
+  await dispatch($, { type: 'go-back', now: await $.clock.now() })
+}
+
 /** 「返信」: 本体の入力欄の先頭に「>> 」を足す。打ちかけの下書きは残す */
 async function reply($: EngineInterface): Promise<void> {
   const { text } = await $.prompt.read()
@@ -426,6 +431,7 @@ function actionsFor($: EngineInterface): Actions {
     reply: () => void reply($).catch(() => undefined),
     skip: () => void dispatch($, { type: 'my-final', text: null }),
     leave: () => void dispatch($, { type: 'leave' }),
+    goBack: () => void goBack($),
     block: () => void dispatch($, { type: 'block' }),
     report: () => void dispatch($, { type: 'report' }),
     reveal: id => void dispatch($, { type: 'reveal', id }),

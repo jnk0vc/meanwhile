@@ -31,6 +31,7 @@ export type MachineEvent =
   | { type: 'my-final'; text: string | null }
   | { type: 'final-timeout' }
   | { type: 'leave' }
+  | { type: 'go-back'; now: number }
   | { type: 'block' }
   | { type: 'report' }
   | { type: 'stop-search' }
@@ -135,8 +136,6 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
           [{ do: 'arm', ms: settings.matchDelayMs, timer: 'match' }],
         ]
       }
-      // 最後の一言を書く前に次のプロンプトを送ったなら、会話を続ける
-      if (view.phase === 'final') return [{ ...working, phase: 'chatting', deadline: null, span: null }, [{ do: 'disarm' }]]
       return [working, []]
     }
     case 'work-end': {
@@ -149,10 +148,8 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
           // マッチ待ち中に作業が終わったら、何も出さずに待機へ
           return [{ ...done, phase: 'idle', deadline: null, span: null }, [{ do: 'disarm' }, { do: 'leave' }]]
         case 'chatting':
-          return [
-            { ...done, phase: 'final', deadline: event.now + settings.finalMs, span: settings.finalMs },
-            [{ do: 'arm', ms: settings.finalMs, timer: 'final' }, { do: 'announce' }],
-          ]
+          // 作業が終わっても会話は打ち切らない。話し終わったら本人が[戻る]を押す
+          return [done, [{ do: 'announce' }]]
         default:
           return [{ ...done, isPaused: false }, []]
       }
@@ -233,6 +230,13 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
       ]
     }
 
+    case 'go-back':
+      // [戻る]: いつでも最後の一言の場面に入る。制限時間のあいだに1通送るかスキップすると戻る
+      if (view.phase !== 'chatting') return [view, []]
+      return [
+        { ...view, phase: 'final', deadline: event.now + settings.finalMs, span: settings.finalMs },
+        [{ do: 'arm', ms: settings.finalMs, timer: 'final' }],
+      ]
     case 'leave': {
       if (view.phase === 'chatting' || view.phase === 'final') {
         return [{ ...afterRoom({ ...view, isPaused: true }, 'you-left')[0], isPaused: true }, [{ do: 'disarm' }, { do: 'leave' }]]

@@ -18,6 +18,7 @@ export type Actions = {
   reply: () => void
   skip: () => void
   leave: () => void
+  goBack: () => void
   block: () => void
   report: () => void
   reveal: (id: string) => void
@@ -293,18 +294,25 @@ export function drawBand({ kit, view, surface, now, columns, rows, display, acti
       const status = isFinal ? copy.phaseLabel.final : `${copy.someone} · ${langs}`
       const buttons = [
         button('reply', copy.reply, actions.reply, true),
-        isFinal ? button('skip', copy.skip, actions.skip) : button('leave', copy.leave, actions.leave),
+        isFinal ? button('skip', copy.skip, actions.skip) : button('back', copy.back, actions.goBack),
         button('block', copy.block, actions.block),
         button('report', copy.report, actions.report),
       ]
       // 1行目・導火線・案内・バナーを除いた残りに、新しい発言から詰める
-      const fixed = 2 + (isFinal ? 1 + rowsOf(copy.finalPrompt, width) : 0) + (view.needsYou ? 1 : 0) + (view.notice ? 1 : 0)
+      const workDone = !isFinal && !view.isWorking
+      const fixed =
+        2 +
+        (isFinal ? 1 + rowsOf(copy.finalPrompt, width) : 0) +
+        (workDone ? rowsOf(copy.workDoneHint, width) : 0) +
+        (view.needsYou ? 1 : 0) +
+        (view.notice ? 1 : 0)
       const shown = fitLines(view.lines, rows - fixed, width, display)
       return (
         <Box flexDirection="column" width={width}>
           {Head(kit, view, copy, status, buttons)}
           {isFinal ? Fuse(kit, view, now, width, copy) : null}
           {isFinal ? <Text bold>{copy.finalPrompt}</Text> : null}
+          {workDone ? <Text bold>{copy.workDoneHint}</Text> : null}
           {view.needsYou ? (
             <Text color={NEEDS_YOU} bold>
               ! {copy.needsYou}

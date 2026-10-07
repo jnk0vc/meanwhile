@@ -196,10 +196,14 @@ test('作業中だけ相手を探し、帯で読んで本体の入力欄から�
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'ls' } })
   expect(await band.find({ text: /Claudeがあなたの回答を待っています/ })).toBeDefined()
 
-  // 自分の作業が終わると最後の一言。「>> 」で送れば退室
+  // 自分の作業が終わっても会話は続く。話し終わったら[戻る]で最後の一言の場面に入り、「>> 」で送れば退室
   await $.turn.complete({ answer: 'done', durationMs: 60_000, isAborted: false, turnId: 't1', reason: 'answer' })
-  expect(await band.find({ text: /最後の一言を1回だけ送れます/ })).toBeDefined()
+  expect(await band.find({ text: /話し終わったら\[戻る\]で戻れます/ })).toBeDefined()
   expect(await band.find({ text: /Claudeがあなたの回答を待っています/ })).toBeUndefined()
+  const after = await $.prompt.submit(say('>> もう少し話せます'))
+  expect(after.drop).toMatch(/Someoneに送りました/)
+  await band.press({ key: 'back' })
+  expect(await band.find({ text: /最後の一言を「>> 」で1回だけ送れます/ })).toBeDefined()
   const last = await $.prompt.submit(say('＞＞またね！'))
   expect(last.drop).toMatch(/最後の一言を送って退室しました/)
   expect(commands).toContainEqual({ cmd: 'final', text: 'またね！' })
