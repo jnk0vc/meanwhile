@@ -1,6 +1,6 @@
 // 画面の文言。自分の言語が日本語なら日本語、それ以外は英語で出す。
 
-import type { DraftWarning, Notice } from '../types'
+import type { DraftWarning, Notice, Phase } from '../types'
 
 export type Copy = {
   shareNote: string
@@ -18,6 +18,13 @@ export type Copy = {
   queued: string
   connecting: string
   connected: (lang: string) => string
+  connectedHint: string
+  phaseLabel: Record<Phase, string>
+  sendHint: string
+  finalHint: string
+  toastConnected: string
+  toastFinal: string
+  statusTalking: string
   stopSearch: string
   finalPrompt: string
   someone: string
@@ -66,6 +73,22 @@ const ja: Copy = {
   queued: '相手を探しています…',
   connecting: '相手が見つかりました。つないでいます…',
   connected: lang => `Someoneとつながりました · ${lang}`,
+  connectedHint: 'Someoneとつながりました。相談したいことを自分の言葉で書いてみてください',
+  phaseLabel: {
+    off: 'オフ',
+    consent: 'オフ',
+    idle: '待機中',
+    working: 'Claudeが作業中',
+    queued: '相手を探しています',
+    connecting: 'つないでいます',
+    chatting: '会話中',
+    final: '最後の一言',
+  },
+  sendHint: 'Enterで送信',
+  finalHint: 'Enterで送って退室',
+  toastConnected: 'Someoneとつながりました。Meanwhileのパネルで話せます',
+  toastFinal: 'Claudeの作業が終わりました。Meanwhileで最後の一言を送れます',
+  statusTalking: 'Someoneと会話中',
   stopSearch: '探すのをやめる',
   finalPrompt: 'Claudeの作業が終わりました。最後の一言を1回だけ送れます',
   someone: 'Someone',
@@ -76,10 +99,10 @@ const ja: Copy = {
   translateFailed: '翻訳できませんでした',
   hidden: '不適切かもしれないため伏せています',
   show: '表示する',
-  commandWarning: '⚠ コマンドらしき内容です。実行しないでください',
-  urlWarning: '⚠ URLを含みます。リンクにはしていません',
-  placeholder: 'メッセージ(200文字まで)',
-  finalPlaceholder: '最後の一言(Enterで送って退室)',
+  commandWarning: '⚠ コマンドらしき内容。実行しないで',
+  urlWarning: '⚠ URLはリンクにしていません',
+  placeholder: 'Someoneにメッセージ',
+  finalPlaceholder: '最後の一言',
   send: '送信',
   skip: 'スキップ',
   report: '通報',
@@ -131,6 +154,22 @@ const en: Copy = {
   queued: 'Looking for someone…',
   connecting: 'Found someone. Connecting…',
   connected: lang => `Connected with Someone · ${lang}`,
+  connectedHint: 'You are connected with Someone. Ask them anything, in your own words',
+  phaseLabel: {
+    off: 'Off',
+    consent: 'Off',
+    idle: 'Waiting',
+    working: 'Claude is working',
+    queued: 'Looking for someone',
+    connecting: 'Connecting',
+    chatting: 'Talking',
+    final: 'Last word',
+  },
+  sendHint: 'Enter to send',
+  finalHint: 'Enter sends it and leaves',
+  toastConnected: 'Connected with Someone. Talk in the Meanwhile pane',
+  toastFinal: 'Claude is done. Send your last word in Meanwhile',
+  statusTalking: 'Talking with Someone',
   stopSearch: 'Stop looking',
   finalPrompt: 'Claude is done. You can send one last word',
   someone: 'Someone',
@@ -141,10 +180,10 @@ const en: Copy = {
   translateFailed: 'Could not translate',
   hidden: 'Hidden because it may be inappropriate',
   show: 'Show',
-  commandWarning: '⚠ Looks like a command. Do not run it',
-  urlWarning: '⚠ Contains a URL. It is not a link',
-  placeholder: 'Message (up to 200 characters)',
-  finalPlaceholder: 'Last word (Enter sends it and leaves)',
+  commandWarning: '⚠ Looks like a command. Don\'t run it',
+  urlWarning: '⚠ URL shown as plain text',
+  placeholder: 'Message Someone',
+  finalPlaceholder: 'Your last word',
   send: 'Send',
   skip: 'Skip',
   report: 'Report',

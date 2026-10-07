@@ -15,12 +15,16 @@ import {
   splitLines,
 } from './bridge'
 import { copyFor } from './copy'
+import { parseAppleLanguages, parseLocale } from './locale'
 import { type Effect, type MachineEvent, type Settings, initialView, reduce } from './machine'
-import { type Actions, type Display, drawPane } from './pane'
+import { type Actions, type Display, type Surface, drawPane } from './pane'
+import { SCENES, isScene, previewView } from './preview'
 import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, sanitize } from './safety'
 import { TRANSLATE_SYSTEM, TRANSLATE_TIMEOUT_MS, buildPrompt, parseTranslation } from './translate'
 
 const PANE = 'meanwhile'
+// 端末で入力欄の上に開くときに頼む高さ。会話2〜3通と入力欄が収まる
+const PANE_ROWS = 22
 const view = atom({ plugin: 'meanwhile', key: 'view' } as const, initialView('en', false))
 const tick = atom({ plugin: 'meanwhile', key: 'tick' } as const, 0)
 
@@ -58,6 +62,8 @@ let starting: Promise<Bridge> | undefined
 let timer: Timer | undefined
 let ticker: Timer | undefined
 let needsYou = false
+// プラグインのフォルダにdev.jsonがあるときだけ、開発用プレビュー(ツールとコマンド)を使える
+let devMode = false
 let lineSeq = 0
 
 function seconds(value: string | undefined, fallback: number, min: number, max: number): number {
@@ -83,27 +89,32 @@ function nextId(): string {
   return `l${lineSeq}-${randomHex(3)}`
 }
 
+/** ステータス行。エンジンがMod名を前に付けるので、ここには状態だけを書く */
 function statusFor(v: View): string | undefined {
   const copy = copyFor(v.myLang)
   switch (v.phase) {
     case 'queued':
     case 'connecting':
-      return `meanwhile · ${copy.queued}`
+      return copy.phaseLabel[v.phase]
     case 'chatting':
-      return `meanwhile · ${copy.someone}`
+      return copy.statusTalking
     case 'final':
-      return `meanwhile · ${copy.lastWord}`
+      return copy.phaseLabel.final
     default:
       return undefined
   }
 }
 
-/** 自分の言語。設定がautoならOSのロケール(LC_ALL → LANG → Intl)から決める */
+/**
+ * 自分の言語。設定がautoなら、macOSのシステム設定の言語 → LC_ALL → LANG → Intlの順に決める。
+ * macOSを先にするのは、デスクトップアプリではLANGが空のことが多いため
+ */
 async function resolveLanguage($: EngineInterface): Promise<string> {
   const setting = config.language
   if (setting && setting !== 'auto' && /^[a-z]{2,3}$/.test(setting)) return setting
-  const raw = (await $.env.get('LC_ALL')) || (await $.env.get('LANG')) || ''
-  const fromEnv = /^([a-z]{2,3})(?:[_.-]|$)/.exec(raw)?.[1]
+  const fromMac = await macLanguage($)
+  if (fromMac) return fromMac
+  const fromEnv = parseLocale((await $.env.get('LC_ALL')) || (await $.env.get('LANG')) || '')
   if (fromEnv) return fromEnv
   try {
     const fromIntl = new Intl.DateTimeFormat().resolvedOptions().locale.split('-')[0]
@@ -112,6 +123,21 @@ async function resolveLanguage($: EngineInterface): Promise<string> {
     // Intlが無い環境
   }
   return 'en'
+}
+
+/** macOSのシステム設定で選んだ言語。macOS以外(defaultsが無い)ではnull */
+async function macLanguage($: EngineInterface): Promise<string | null> {
+  for (const key of ['AppleLanguages', 'AppleLocale'] as const) {
+    try {
+      const { exitCode, stdout } = await $.process.run(['/usr/bin/defaults', 'read', '-g', key], { timeoutMs: 3_000 })
+      if (exitCode !== 0) continue
+      const lang = key === 'AppleLanguages' ? parseAppleLanguages(stdout) : parseLocale(stdout)
+      if (lang) return lang
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 async function isConsented($: EngineInterface): Promise<boolean> {
@@ -190,13 +216,16 @@ async function advance($: EngineInterface): Promise<void> {
   await update($, tick, n => n + 1)
 }
 
+/**
+ * つながったときと最後の一言のときに、パネルを開いて知らせる。デスクトップでは他のModの
+ * タブが前に出たままのことがあり、端末が狭ければパネル自体が開かないため、トーストも出す
+ */
 async function openPane($: EngineInterface): Promise<void> {
-  const opened = await $.ui.open({ id: PANE, title: 'Meanwhile' })
-  if (opened.isPlaced) return
-  // 端末が狭くて自動では開けないときは、知らせだけ出す
+  const opened = await $.ui.open({ id: PANE, title: 'Meanwhile', rows: PANE_ROWS })
   const { myLang, phase } = await read($, view)
   const copy = copyFor(myLang)
-  $.ui.toast(`meanwhile: ${phase === 'final' ? copy.finalPrompt : copy.someone} → /meanwhile`)
+  const message = phase === 'final' ? copy.toastFinal : copy.toastConnected
+  $.ui.toast(opened.isPlaced ? message : `${message}(/meanwhile)`)
 }
 
 /**
@@ -417,6 +446,15 @@ function actionsFor($: EngineInterface): Actions {
   }
 }
 
+/** 開発用プレビュー: 会話を止め、パネルを見本の状態にして開く */
+async function showPreview($: EngineInterface, scene: Parameters<typeof previewView>[0]): Promise<void> {
+  const { myLang } = await read($, view)
+  const now = await $.clock.now()
+  await dispatch($, { type: 'disable' })
+  await update($, view, () => previewView(scene, myLang, now))
+  await $.ui.open({ id: PANE, title: 'Meanwhile', rows: PANE_ROWS })
+}
+
 async function markNeedsYou($: EngineInterface, value: boolean): Promise<void> {
   needsYou = value
   await dispatch($, { type: 'needs-you', value })
@@ -438,11 +476,37 @@ export const register: Register = (on, options) => {
     // 読み込み直しでサイドカーは終わっているので、会話の状態も最初からにする
     await update($, view, () => initialView(myLang, enabled))
     $.ui.status(undefined)
+    devMode = await $.fs.exists(`${$.plugin.root}/dev.json`)
+    if (devMode) {
+      await $.tool.register({
+        name: 'preview',
+        description: 'Meanwhile開発用: パネルを見本の状態にして描かせる(サイドカーは使わない)',
+        inputSchema: {
+          type: 'object',
+          properties: { scene: { type: 'string', enum: [...SCENES] } },
+          required: ['scene'],
+        },
+      })
+    }
     return next(e)
+  })
+
+  on('tool.call', { tool: 'mcp__meanwhile__preview' }, async ($, e) => {
+    // MCPツールの引数はeの直下に並ぶ
+    const scene = (e as { scene?: unknown }).scene
+    if (!isScene(scene)) return { deny: `scene must be one of: ${SCENES.join(', ')}` }
+    await showPreview($, scene)
+    return { result: `meanwhile preview: ${scene}` }
   })
 
   on('command.run', { command: 'meanwhile' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    const [verb, scene] = arg.split(/\s+/)
+    if (devMode && verb === 'preview') {
+      if (!isScene(scene)) return { text: `meanwhile preview <${SCENES.join('|')}>` }
+      await showPreview($, scene)
+      return { text: `meanwhile preview: ${scene}` }
+    }
     if (arg === 'off') {
       await dispatch($, { type: 'disable' })
       return { text: 'meanwhile: off' }
@@ -452,7 +516,7 @@ export const register: Register = (on, options) => {
     } else if (arg === 'on' || (await read($, view)).phase === 'off') {
       await dispatch($, { type: 'ask-consent' })
     }
-    await $.ui.open({ id: PANE, title: 'Meanwhile' })
+    await $.ui.open({ id: PANE, title: 'Meanwhile', rows: PANE_ROWS })
     return { text: 'meanwhile' }
   })
 
@@ -490,12 +554,13 @@ export const register: Register = (on, options) => {
     await read($, tick)
     const kit = $.ui.resolve(e)
     return drawPane({
+      surface: e.surface as Surface,
       // モバイルにはまだ入力欄が無い(表に名前はあっても何も描かれない)
       kit: { Box: kit.Box, Text: kit.Text, Button: kit.Button, Input: e.surface !== 'mobile' && 'Input' in kit ? kit.Input : undefined },
       view: v,
       now: await $.clock.now(),
       columns: e.props.bodyColumns,
-      rows: e.viewport?.rows ?? 30,
+      rows: e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 30,
       display: config.display,
       matchDelaySeconds: config.settings.matchDelayMs / 1000,
       actions: actionsFor($),

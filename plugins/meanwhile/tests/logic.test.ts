@@ -2,8 +2,9 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { View } from '../types'
 import { parseSidecarLine, socketPathFor, splitLines } from '../hooks/bridge'
+import { parseAppleLanguages, parseLocale } from '../hooks/locale'
 import { type Effect, type MachineEvent, initialView, reduce } from '../hooks/machine'
-import { fuse } from '../hooks/pane'
+import { cells, fitLines, fuse, lineRows } from '../hooks/pane'
 import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, sanitize } from '../hooks/safety'
 import { buildPrompt, fence, parseTranslation } from '../hooks/translate'
 
@@ -244,5 +245,58 @@ describe('サイドカーとのやりとり', () => {
     expect(half.lit).toHaveLength(10)
     expect(half.burnt).toHaveLength(10)
     expect(fuse(0, 30_000, 21).tip).toBe(' ')
+  })
+})
+
+describe('言語の判定', () => {
+  test('AppleLanguagesはいちばん上の言語を使う', () => {
+    expect(parseAppleLanguages('(\n    "ja-JP",\n    "en-JP"\n)\n')).toBe('ja')
+    expect(parseAppleLanguages('(\n    en,\n    ja\n)\n')).toBe('en')
+    expect(parseAppleLanguages('(\n    "zh-Hans-JP"\n)\n')).toBe('zh')
+    expect(parseAppleLanguages('The domain/default pair does not exist')).toBeNull()
+  })
+
+  test('LANGやAppleLocaleの形から言語を取り出し、CやPOSIXは言語として扱わない', () => {
+    expect(parseLocale('ja_JP.UTF-8')).toBe('ja')
+    expect(parseLocale('ja_JP\n')).toBe('ja')
+    expect(parseLocale('en')).toBe('en')
+    expect(parseLocale('C.UTF-8')).toBeNull()
+    expect(parseLocale('POSIX')).toBeNull()
+    expect(parseLocale('')).toBeNull()
+  })
+})
+
+describe('パネルの行数', () => {
+  const line = (id: string, text: string, from: 'me' | 'peer' = 'peer') => ({
+    id,
+    from,
+    text,
+    translated: null,
+    translation: 'none' as const,
+    flagged: false,
+    revealed: false,
+    warnings: [],
+    isFinal: false,
+    at: 0,
+  })
+
+  test('全角と絵文字は2セル、半角は1セルと数える', () => {
+    expect(cells('abc')).toBe(3)
+    expect(cells('日本語')).toBe(6)
+    expect(cells('👋a')).toBe(3)
+  })
+
+  test('1通の行数は折り返しと前の余白を含む。端末の自分の発言は枠の2行が増える', () => {
+    expect(lineRows(line('a', 'hi'), 40, 'both', 'terminal')).toBe(3)
+    expect(lineRows(line('a', 'x'.repeat(80)), 40, 'both', 'terminal')).toBe(4)
+    expect(lineRows(line('m', 'hi', 'me'), 40, 'both', 'terminal')).toBe(4)
+    expect(lineRows(line('m', 'hi', 'me'), 40, 'both', 'desktop')).toBe(2)
+  })
+
+  test('本文の高さに収まるだけ、新しい発言から選ぶ。1通も入らなければ入力欄を優先して出さない', () => {
+    const lines = [line('1', 'one'), line('2', 'two'), line('3', 'three')]
+    expect(fitLines(lines, 6, 40, 'both', 'terminal').map(l => l.id)).toEqual(['2', '3'])
+    expect(fitLines(lines, 100, 40, 'both', 'terminal').map(l => l.id)).toEqual(['1', '2', '3'])
+    expect(fitLines(lines, 2, 40, 'both', 'terminal')).toEqual([])
   })
 })

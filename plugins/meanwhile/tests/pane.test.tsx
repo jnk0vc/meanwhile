@@ -38,14 +38,25 @@ function fakeSidecar() {
   }
 }
 
+type HostOptions = {
+  translation?: string
+  env?: Record<string, string>
+  /** `defaults read -g AppleLanguages`の出力。無ければmacOS以外として失敗させる */
+  appleLanguages?: string
+  /** プラグインのフォルダにdev.jsonがあるか(開発用プレビューの有無) */
+  devJson?: boolean
+}
+
 /** ホスト側をまとめて差し替える。サイドカーへの指示はcommandsに溜まる */
-function host(on: On, translation = '{"translated":"何を作ってるの？","flagged":false}') {
+function host(on: On, options: HostOptions = {}) {
+  const translation = options.translation ?? '{"translated":"何を作ってるの？","flagged":false}'
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.store(on)
-  mock.env(on, { LANG: 'ja_JP.UTF-8', TMPDIR: '/tmp/' })
+  mock.env(on, options.env ?? { LANG: 'ja_JP.UTF-8', TMPDIR: '/tmp/' })
   const sidecar = fakeSidecar()
   const commands: Record<string, unknown>[] = []
   const prompts: string[] = []
+  const tools: string[] = []
   // エンジン本来の振る舞いのうち、Modが頼るものだけを最小限に答える
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   // $ の操作(op)は { value } で答える
@@ -56,15 +67,23 @@ function host(on: On, translation = '{"translated":"何を作ってるの？","f
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('classic.PermissionRequest', () => ({}))
-  on('process.run', ($, e) => ({
-    value: {
-      exitCode: 0,
-      stdout: e.argv[0] === '/bin/sh' ? '/usr/local/bin/node\n' : 'v24.16.0\n',
-      stderr: '',
-      isStdoutTruncated: false,
-      isStderrTruncated: false,
-    },
-  }))
+  on('fs.exists', ($, e) => ({ value: !!options.devJson && e.path.endsWith('/dev.json') }))
+  on('tool.register', ($, e) => {
+    tools.push(e.name)
+    return { value: { tool: `mcp__meanwhile__${e.name}` } }
+  })
+  on('process.run', ($, e) => {
+    const isDefaults = e.argv[0] === '/usr/bin/defaults'
+    const stdout = isDefaults
+      ? e.argv[3] === 'AppleLanguages'
+        ? (options.appleLanguages ?? '')
+        : ''
+      : e.argv[0] === '/bin/sh'
+        ? '/usr/local/bin/node\n'
+        : 'v24.16.0\n'
+    const exitCode = isDefaults && !stdout ? 1 : 0
+    return { value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
   on('process.spawn', async function* () {
     yield* sidecar.lines()
     return { value: { code: 0, signal: null } }
@@ -78,7 +97,7 @@ function host(on: On, translation = '{"translated":"何を作ってるの？","f
     const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
     return { value: { isAnswered: true as const, text: translation, usage } }
   })
-  return { clock, sidecar, commands, prompts }
+  return { clock, sidecar, commands, prompts, tools }
 }
 
 test('同意して有効にすると、作業中だけ相手を探し、翻訳つきで話して最後の一言で別れる', OPTIONS, async ($, on) => {
@@ -108,7 +127,7 @@ test('同意して有効にすると、作業中だけ相手を探し、翻訳�
   sidecar.push({ ev: 'matched' })
   sidecar.push({ ev: 'connected', lang: 'en' })
   await clock.settle()
-  expect(await ui.find({ text: /Someoneとつながりました · 英語/ })).toBeDefined()
+  expect(await ui.find({ text: /英語 ⇄ 日本語/ })).toBeDefined()
 
   // 受信: 翻訳文を大きく、原文を小さく。相手の文はタグで囲んでHaikuに渡す
   sidecar.push({ ev: 'chat', text: 'What are you building? \u001b[31m' })
@@ -219,4 +238,50 @@ test('どのサーフェスでも描ける。モバイルは入力欄の代わ�
   const mobile = await $.ui.mount({ plugin: 'meanwhile', surface: 'mobile', ...PANE })
   expect(await mobile.find({ text: /このデバイスからは送信できません/ }), 'mobile').toBeDefined()
   await mobile.unmount()
+})
+
+test('macOSではシステム設定の言語で画面の文言と翻訳先を決める(LANGが空でも日本語)', async ($, on) => {
+  host(on, { env: { TMPDIR: '/tmp/' }, appleLanguages: '(\n    "ja-JP",\n    "en-JP"\n)\n' })
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'meanwhile', surface: 'desktop', ...PANE })
+  expect(await ui.find({ text: /アイディアは匿名の相手に共有されます/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('macOSではシステム設定の言語で画面の文言と翻訳先を決める(LANGがen_USでも日本語)', async ($, on) => {
+  host(on, { env: { LANG: 'en_US.UTF-8', TMPDIR: '/tmp/' }, appleLanguages: '(\n    "ja-JP",\n    "en-JP"\n)\n' })
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'meanwhile', surface: 'desktop', ...PANE })
+  expect(await ui.find({ text: /アイディアは匿名の相手に共有されます/ })).toBeDefined()
+  await ui.unmount()
+})
+
+
+test('macOS以外ではLANGで決め、それも無ければ英語にする', async ($, on) => {
+  host(on, { env: { LANG: 'C.UTF-8', TMPDIR: '/tmp/' } })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...PANE })
+  expect(await ui.find({ text: /Your ideas are shared with an anonymous person/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('languageを明示すれば、システム設定より優先する', { options: { language: 'ko' } }, async ($, on) => {
+  host(on, { appleLanguages: '(\n    "ja-JP"\n)\n' })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...PANE })
+  // 韓国語の文言は持っていないので英語で出る。日本語にならないことを確かめる
+  expect(await ui.find({ text: /Your ideas are shared/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('開発用プレビューは、プラグインのフォルダにdev.jsonがあるときだけ登録する', async ($, on) => {
+  const { tools } = host(on)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  expect(tools).toEqual([])
+})
+
+test('dev.jsonがあれば、プレビューツールを登録する', async ($, on) => {
+  const { tools } = host(on, { devJson: true })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  expect(tools).toEqual(['preview'])
 })

@@ -4,3 +4,5 @@ node_modules/
 .dev.vars
 # Claude Code がmodを読み込むたびに置く型(手元専用)
 plugins/meanwhile/.claude-plugin/types/
+# 開発用プレビューの有効化(scripts/dev-sync.sh が写した先にだけ置く)
+plugins/meanwhile/dev.json

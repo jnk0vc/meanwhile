@@ -76,7 +76,7 @@ modの実行環境にはソケットがないため、WebRTCとWebSocketはサ�
 | `server` | 空 | マッチングサーバーの起点(`wss://…`) |
 | `matchDelay` | 30 | 15 / 30 / 45 / 60 / 90 / 120(秒) |
 | `finalSeconds` | 60 | 30 / 60 / 90 / 120 / 180(秒) |
-| `language` | auto | auto(OSのロケール)/ ja / en / zh / ko ほか |
+| `language` | auto | auto / ja / en / zh / ko ほか。autoはmacOSならシステム設定の言語、それ以外は`LANG` |
 | `display` | both | both(翻訳＋原文)/ translated / original |
 | `sound` | off | on / off |
 
@@ -139,6 +139,16 @@ npm run typecheck
 npm test              # サーバー・サイドカー・modのテスト
 npm run e2e           # wrangler devと本物のサイドカー3つで、マッチから最後の一言まで通す
 ```
+
+### 手元での試運転
+
+```bash
+npm run dev:server                       # マッチングサーバーをws://127.0.0.1:8787で起動
+scripts/dev-sync.sh ~/.claude/dev-mods/<セッションID>   # modを試運転用に写す
+node scripts/peer.mjs --lang en          # 相手役。標準入力の1行がチャットになる
+```
+
+`scripts/dev-sync.sh`が写した先では、サーバーがローカルに向き、マッチ開始が15秒になり、開発用プレビューが有効になります(`dev.json`を置くため)。プレビューは`/meanwhile preview <状態>`か`mcp__meanwhile__preview`ツールで、サイドカーなしにパネルを`chat`・`final`・`consent`などの状態にして描かせます。配布物には`dev.json`を含めないので、プレビューは出ません。
 
 サイドカーのビルド結果(`plugins/meanwhile/sidecar/meanwhile-sidecar.mjs`)はリポジトリに含めます。インストールしたmodが`npm install`なしで動くようにするためです。依存はバージョンを固定し(`.npmrc`の`save-exact`)、自動更新しません。同梱した依存のライセンスは`meanwhile-sidecar.mjs.LEGAL.txt`にあります。
 
