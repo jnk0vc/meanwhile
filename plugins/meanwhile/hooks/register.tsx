@@ -574,6 +574,7 @@ export const register: Register = (on, options) => {
     const band = drawBand({
       kit: { Box: kit.Box, Text: kit.Text, Button: kit.Button },
       view: v,
+      surface: e.surface,
       now: await $.clock.now(),
       columns: e.props.bodyColumns,
       rows: e.props.maxRows,

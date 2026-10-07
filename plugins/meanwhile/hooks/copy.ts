@@ -40,6 +40,7 @@ export type Copy = {
   leave: string
   dismiss: string
   enabled: string
+  focusHint: string
   disabled: string
   notices: Record<Notice, string>
   draft: Record<DraftWarning, string>
@@ -101,6 +102,7 @@ const ja: Copy = {
   dismiss: '閉じる',
   enabled: 'Meanwhileを有効にしました。プロンプトを送って作業が続けば、相手を探します',
   disabled: 'Meanwhileをオフにしました',
+  focusHint: 'ボタンはクリックするか、ctrl+x → Tabで帯に移ってEnterで押せます',
   notices: {
     'peer-done': 'Someoneは作業に戻りました',
     'peer-blocked': 'Someoneが退室しました',
@@ -178,6 +180,7 @@ const en: Copy = {
   dismiss: 'Dismiss',
   enabled: 'Meanwhile is on. If Claude keeps working after your prompt, it looks for someone',
   disabled: 'Meanwhile is off',
+  focusHint: 'Click a button, or press ctrl+x then Tab to move into this band and Enter',
   notices: {
     'peer-done': 'Someone went back to work',
     'peer-blocked': 'Someone left',

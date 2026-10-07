@@ -214,6 +214,7 @@ function LineView(kit: Kit, line: Line, copy: Copy, display: Display, actions: A
 export type BandInput = {
   kit: Kit
   view: View
+  surface: Surface
   now: number
   columns: number
   /** 帯が丸ごと見せられる行数。これに収まるように発言を選ぶ */
@@ -223,7 +224,7 @@ export type BandInput = {
 }
 
 /** 何も出さないときはnull。待機中・オフで知らせもないとき */
-export function drawBand({ kit, view, now, columns, rows, display, actions }: BandInput) {
+export function drawBand({ kit, view, surface, now, columns, rows, display, actions }: BandInput) {
   const { Box, Text, Button } = kit
   const copy = copyFor(view.myLang)
   const width = Math.max(24, columns)
@@ -251,6 +252,8 @@ export function drawBand({ kit, view, now, columns, rows, display, actions }: Ba
               <Text>{point}</Text>
             </Box>
           ))}
+          {/* 端末では、帯のボタンを押すのに先に帯へ移る必要がある */}
+          {surface === 'terminal' ? <Text color={MUTED}>{copy.focusHint}</Text> : null}
         </Box>
       )
     case 'idle':

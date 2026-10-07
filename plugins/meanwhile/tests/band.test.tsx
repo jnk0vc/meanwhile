@@ -134,6 +134,7 @@ test('/meanwhileで同意画面が帯に出て、同意すると有効になる'
 
   await $.command.run({ command: 'meanwhile', args: '', ...RUN })
   expect(await band.find({ text: /IPアドレスが見えます/ })).toBeDefined()
+  expect(await band.find({ text: /ctrl\+x → Tab/ })).toBeDefined()
   expect(await band.find({ text: /18歳以上/ })).toBeDefined()
   await band.press({ key: 'agree' })
   // 有効でも、待機中は帯に何も出さない
