@@ -4,6 +4,9 @@
 //   node scripts/e2e.mjs
 //
 // サーバーは本物のDurable Object(ローカルのworkerd)、WebRTCも本物のweriftで動く。
+// サイドカーは本番と同じくLAN内のアドレスを相手に渡さないので、同じマシンの2つは
+// ルーターのヘアピンNATで折り返してつながる。対応していないネットワークやオフラインでは、
+// MEANWHILE_SHARE_LAN_ADDRESSES=1 node scripts/e2e.mjs で、LAN内のアドレスも渡して試す。
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'

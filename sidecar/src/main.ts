@@ -40,6 +40,8 @@ const session = new Session({
   stun: stun.length > 0 ? stun : DEFAULT_STUN,
   identity: createIdentity(),
   emit,
+  // 同じマシンで2つ動かす試験(scripts/e2e.mjs)のときだけ1にする
+  shareLanAddresses: process.env.MEANWHILE_SHARE_LAN_ADDRESSES === '1',
 })
 
 type Command =

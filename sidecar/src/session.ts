@@ -18,6 +18,7 @@ import {
   reportPayload,
 } from '../../shared/wire.ts'
 import { type Identity, solvePow } from './identity.ts'
+import { scrubCandidate, scrubSdp } from './privacy.ts'
 
 /** サイドカーからModへ知らせる出来事。標準出力に1行ずつ書く */
 export type SidecarEvent =
@@ -43,6 +44,8 @@ export type SessionOptions = {
   connectTimeoutMs?: number
   pingMs?: number
   deadMs?: number
+  /** LAN内のアドレスも相手に渡す。同じマシン・同じLANでの試験用で、既定はfalse */
+  shareLanAddresses?: boolean
 }
 
 type Phase = 'idle' | 'queued' | 'connecting' | 'open'
@@ -85,7 +88,7 @@ export class Session {
   private blocked: string[] = []
 
   constructor(options: SessionOptions) {
-    this.opts = { connectTimeoutMs: 10_000, pingMs: 15_000, deadMs: 45_000, ...options }
+    this.opts = { connectTimeoutMs: 10_000, pingMs: 15_000, deadMs: 45_000, shareLanAddresses: false, ...options }
   }
 
   // ---- Modから呼ばれる操作 ----
@@ -254,8 +257,13 @@ export class Session {
     this.pc = pc
     pc.onIceCandidate.subscribe(candidate => {
       if (gen !== this.generation) return
-      const ice: IceInit | null = candidate ? (candidate.toJSON() as IceInit) : null
-      this.sendServer({ type: 'signal', ice })
+      if (!candidate) {
+        this.sendServer({ type: 'signal', ice: null })
+        return
+      }
+      const ice = candidate.toJSON() as IceInit
+      const text = this.opts.shareLanAddresses ? ice.candidate : scrubCandidate(ice.candidate)
+      if (text !== null) this.sendServer({ type: 'signal', ice: { ...ice, candidate: text } })
     })
     pc.connectionStateChange.subscribe(state => {
       if (gen !== this.generation) return
@@ -265,7 +273,7 @@ export class Session {
       this.attach(gen, pc.createDataChannel('meanwhile', { ordered: true }))
       await pc.setLocalDescription(await pc.createOffer())
       if (gen === this.generation && pc.localDescription) {
-        this.sendServer({ type: 'signal', sdp: { type: 'offer', sdp: pc.localDescription.sdp } })
+        this.sendServer({ type: 'signal', sdp: { type: 'offer', sdp: this.outgoingSdp(pc.localDescription.sdp) } })
       }
     } else {
       pc.onDataChannel.subscribe(dc => {
@@ -282,12 +290,16 @@ export class Session {
       if (sdp.type === 'offer') {
         await pc.setLocalDescription(await pc.createAnswer())
         if (gen === this.generation && pc.localDescription) {
-          this.sendServer({ type: 'signal', sdp: { type: 'answer', sdp: pc.localDescription.sdp } })
+          this.sendServer({ type: 'signal', sdp: { type: 'answer', sdp: this.outgoingSdp(pc.localDescription.sdp) } })
         }
       }
       return
     }
     if (ice !== undefined) await pc.addIceCandidate(ice)
+  }
+
+  private outgoingSdp(sdp: string): string {
+    return this.opts.shareLanAddresses ? sdp : scrubSdp(sdp)
   }
 
   private attach(gen: number, dc: RTCDataChannel): void {
