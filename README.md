@@ -1,8 +1,12 @@
 # Meanwhile
 
-Claude Codeが作業している間だけ、同じく待っている誰かと匿名で1対1チャットできるmodです。別の窓は開かず、相手の発言は本体の入力欄の真上の帯に出て、自分の発言は本体の入力欄に`>> `で始めて送ります。相手の言語が違えばHaikuが自動で翻訳し、自分のClaudeの作業が終わったら相手に「最後の一言」を1回だけ送って退室します。
+Claude Codeが作業している間だけ、同じく待っている誰かと匿名で1対1チャットできるmodです。別の窓は開かず、相手の発言は本体の入力欄の真上の帯に出て、自分の発言は本体の入力欄に`>> `で始めて送ります。相手の言語が違えばHaikuが自動で翻訳します。話し終わったら帯の[戻る]を押し、相手に「最後の一言」を1回だけ送って退室します。
 
-*A Claude Code mod that pairs you with another waiting developer for an anonymous one-on-one chat, only while Claude is working. Messages in another language are translated by Haiku on the receiver's side, and the chat ends with one last word when your Claude finishes.*
+*A Claude Code mod that pairs you with another waiting developer for an anonymous one-on-one chat while Claude is working. Messages in another language are translated by Haiku on the receiver's side, and you leave with one last word whenever you are ready to go back.*
+
+![Meanwhileの動き(29秒、ターミナルの画面をそのまま録画)](media/meanwhile-demo.gif)
+
+動画(mp4): [media/meanwhile-demo.mp4](media/meanwhile-demo.mp4)
 
 > **開発中です。** マッチングサーバーはまだ公開していません。
 
@@ -13,9 +17,10 @@ Claude Codeが作業している間だけ、同じく待っている誰かと匿
 1. プロンプトを送ってから30秒(設定で変更可)たってもClaudeが作業中なら、相手を探し始めます。短いタスクでは何も起きません。
 2. 相手が見つかると、本体の入力欄の真上の帯に「Someone · 英語 ⇄ 日本語」のように相手の言語が出ます。トーストでも知らせます。
 3. 相手の発言は帯に、翻訳文を主に、原文を`│`付きの引用で並べて表示します。自分の発言は、本体の入力欄に`>> `(全角の`＞＞`も可)で始めて打つと、Claudeには渡らず相手に届きます。帯の「返信」を押すと、入力欄の先頭に`>> `が入ります。
-4. 自分の作業が終わると帯が「最後の一言」になり、制限時間(既定60秒)の間に`>> `で1通だけ送れます。送るかスキップすると退室します。
-5. 相手が先に終わると、相手の最後の一言と「Someoneは作業に戻りました」を表示し、自分がまだ作業中なら次の相手を探します。
-6. 会話ログは退室と同時に消え、手元にも残りません。
+4. 自分の作業が終わっても、会話はそのまま続きます。帯に「Claudeの作業が終わりました。話し終わったら[戻る]で戻れます」と出て、トーストでも知らせます。
+5. 帯の[戻る]を押すと「最後の一言」の場面になり、制限時間(既定60秒)の間に`>> `で1通だけ送れます。送るかスキップすると退室します。[戻る]はClaudeの作業中でも押せます。
+6. 相手が先に戻ると、相手の最後の一言と「Someoneは作業に戻りました」を表示し、自分がまだ作業中なら次の相手を探します。
+7. 会話ログは退室と同時に消え、手元にも残りません。
 
 Claudeが許可や回答を求めたときは、帯に一行出します。チャットはそのまま続けられます。
 
@@ -74,7 +79,7 @@ modの実行環境にはソケットがないため、WebRTCとWebSocketはサ�
 | 設定(`/config`) | 既定値 | 選択肢 |
 | --- | --- | --- |
 | `server` | 空 | マッチングサーバーの起点(`wss://…`) |
-| `matchDelay` | 30 | 15 / 30 / 45 / 60 / 90 / 120(秒) |
+| `matchDelay` | 30 | 5 / 15 / 30 / 45 / 60 / 90 / 120(秒) |
 | `finalSeconds` | 60 | 30 / 60 / 90 / 120 / 180(秒) |
 | `language` | auto | auto / ja / en / zh / ko ほか。autoはmacOSならシステム設定の言語、それ以外は`LANG` |
 | `display` | both | both(翻訳＋原文)/ translated / original |
@@ -148,7 +153,7 @@ scripts/dev-sync.sh ~/.claude/dev-mods/<セッションID>   # modを試運転�
 node scripts/peer.mjs --lang en          # 相手役。標準入力の1行がチャットになる
 ```
 
-`scripts/dev-sync.sh`が写した先では、サーバーがローカルに向き、マッチ開始が15秒になり、開発用プレビューが有効になります(`dev.json`を置くため)。プレビューは`/meanwhile preview <状態>`か`mcp__meanwhile__preview`ツールで、サイドカーなしに帯を`chat`・`final`・`consent`などの状態にして描かせます。配布物には`dev.json`を含めないので、プレビューは出ません。
+`scripts/dev-sync.sh`が写した先では、サーバーがローカルに向き、マッチ開始が5秒になり、開発用プレビューが有効になります(`dev.json`を置くため)。プレビューは`/meanwhile preview <状態>`か`mcp__meanwhile__preview`ツールで、サイドカーなしに帯を`chat`・`final`・`consent`などの状態にして描かせます。配布物には`dev.json`を含めないので、プレビューは出ません。
 
 サイドカーのビルド結果(`plugins/meanwhile/sidecar/meanwhile-sidecar.mjs`)はリポジトリに含めます。インストールしたmodが`npm install`なしで動くようにするためです。依存はバージョンを固定し(`.npmrc`の`save-exact`)、自動更新しません。同梱した依存のライセンスは`meanwhile-sidecar.mjs.LEGAL.txt`にあります。
 
@@ -160,6 +165,7 @@ node scripts/peer.mjs --lang en          # 相手役。標準入力の1行がチ
 - **WebRTCの置き場所**: modの環境にはソケットもNodeもないため、weriftはサイドカーで動かします。
 - **プロトコルの追加**: サーバーは接続直後に`challenge`(proof-of-workの課題)を送り、`queue.join`は`pow`と`avoid`(避けたい相手の鍵)を持ちます。`match.found`には、署名を検証するための相手の公開鍵`peerKey`が付きます。
 - **通報の送り先**: 会話中はWebSocketを閉じているため、通報は`POST /report`で送ります。
+- **戻るタイミング**: 設計書ではClaudeの作業が終わったら「最後の一言」の場面に切り替えていましたが、会話が途中で打ち切られて短すぎたため、作業が終わっても会話を続け、本人が[戻る]を押したときに最後の一言の場面に入るようにしました。
 - **会話の場所**: サイドパネルは開かず、相手の発言は本体の入力欄の真上の帯に、自分の発言は本体の入力欄から`>> `で送ります。パネルの入力欄はアプリ側で幅が固定されていて、日本語入力も考えると本体の入力欄を使う方が書きやすいためです。
 - **締め出しの条件**: 「検証できた通報が重なった」を、別々の3人(IPのハッシュで区別)からの通報と決めました。
 
