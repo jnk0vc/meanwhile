@@ -286,7 +286,7 @@ test('同じ言語どうしはHaikuを呼ばず、NGワードは伏せて表示�
   await band.unmount()
 })
 
-test('サーバーが未設定なら、探す代わりにそう伝える', { options: { matchDelay: '15' } }, async ($, on) => {
+test('サーバーを空にしたら、探す代わりにそう伝える', { options: { server: '', matchDelay: '15' } }, async ($, on) => {
   const { clock, commands } = host(on, { enabled: true })
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })

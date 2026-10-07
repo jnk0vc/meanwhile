@@ -13,7 +13,7 @@
       "type": "string",
       "title": "Matching server",
       "description": "マッチングサーバーの起点(wss://…)。本文は通らず、接続情報だけを受け渡す",
-      "default": ""
+      "default": "wss://meanwhile-match.jankovic.workers.dev"
     },
     "matchDelay": {
       "type": "string",
