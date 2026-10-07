@@ -116,3 +116,15 @@ const NG_WORDS: readonly RegExp[] = [
 export function hasNgWord(text: string): boolean {
   return NG_WORDS.some(p => p.test(text))
 }
+
+// 本体の入力欄から相手に送るときの頭文字。半角の「>>」と、日本語入力のままの全角「＞＞」
+const RELAY = /^\s*(?:>>|＞＞)\s?/
+
+/**
+ * 本体の入力欄に打った文が相手宛てなら、頭文字を除いた本文を返す。相手宛てでなければnull。
+ * 頭文字だけで本文が空なら''を返す(送らずに止める)
+ */
+export function parseRelay(text: string): string | null {
+  const match = RELAY.exec(text)
+  return match ? text.slice(match[0].length).trim() : null
+}

@@ -17,20 +17,18 @@ import {
 import { copyFor } from './copy'
 import { parseAppleLanguages, parseLocale } from './locale'
 import { type Effect, type MachineEvent, type Settings, initialView, reduce } from './machine'
-import { type Actions, type Display, type Surface, drawPane } from './pane'
+import { type Actions, type Display, drawBand } from './band'
 import { SCENES, isScene, previewView } from './preview'
-import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, sanitize } from './safety'
+import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, parseRelay, sanitize } from './safety'
 import { TRANSLATE_SYSTEM, TRANSLATE_TIMEOUT_MS, buildPrompt, parseTranslation } from './translate'
 
-const PANE = 'meanwhile'
-// 端末で入力欄の上に開くときに頼む高さ。会話2〜3通と入力欄が収まる
-const PANE_ROWS = 22
 const view = atom({ plugin: 'meanwhile', key: 'view' } as const, initialView('en', false))
 const tick = atom({ plugin: 'meanwhile', key: 'tick' } as const, 0)
 
 const STORE_ENABLED = 'enabled'
 const STORE_CONSENT = 'consent'
-const CONSENT_VERSION = 1
+// 同意画面の内容を変えたら上げる。2: 本体の入力欄から「>> 」で送れるようにした
+const CONSENT_VERSION = 2
 
 type Options = {
   server?: string
@@ -195,8 +193,8 @@ async function perform($: EngineInterface, effect: Effect): Promise<void> {
     case 'moderate':
       if (hasNgWord(effect.text)) await dispatch($, { type: 'flag', id: effect.id })
       return
-    case 'open-pane':
-      return openPane($)
+    case 'announce':
+      return announce($)
     case 'chime':
       if (config.sound) await $.audio.play({ asset: 'sounds/chime.wav' }).catch(() => undefined)
       return
@@ -217,15 +215,13 @@ async function advance($: EngineInterface): Promise<void> {
 }
 
 /**
- * つながったときと最後の一言のときに、パネルを開いて知らせる。デスクトップでは他のModの
- * タブが前に出たままのことがあり、端末が狭ければパネル自体が開かないため、トーストも出す
+ * つながったときと最後の一言のときに知らせる。会話は入力欄の上の帯に出るが、
+ * Claudeの出力を読んでいると気づきにくいのでトーストも出す
  */
-async function openPane($: EngineInterface): Promise<void> {
-  const opened = await $.ui.open({ id: PANE, title: 'Meanwhile', rows: PANE_ROWS })
+async function announce($: EngineInterface): Promise<void> {
   const { myLang, phase } = await read($, view)
   const copy = copyFor(myLang)
-  const message = phase === 'final' ? copy.toastFinal : copy.toastConnected
-  $.ui.toast(opened.isPlaced ? message : `${message}(/meanwhile)`)
+  $.ui.toast(phase === 'final' ? copy.toastFinal : copy.toastConnected)
 }
 
 /**
@@ -415,44 +411,55 @@ async function agree($: EngineInterface): Promise<void> {
   await dispatch($, { type: 'enable' })
 }
 
-async function say($: EngineInterface, text: string): Promise<void> {
-  const trimmed = text.trim()
-  if (!trimmed) return
-  const warning = checkOutgoing(trimmed)
-  if (warning) return dispatch($, { type: 'draft-refused', text: trimmed, warning })
-  return dispatch($, { type: 'my-chat', id: nextId(), text: trimmed, now: await $.clock.now() })
-}
-
-async function sayLast($: EngineInterface, text: string | null): Promise<void> {
-  const trimmed = text?.trim() || null
-  const warning = trimmed ? checkOutgoing(trimmed) : null
-  if (trimmed && warning) return dispatch($, { type: 'draft-refused', text: trimmed, warning })
-  return dispatch($, { type: 'my-final', text: trimmed })
+/** 「返信」: 本体の入力欄の先頭に「>> 」を足す。打ちかけの下書きは残す */
+async function reply($: EngineInterface): Promise<void> {
+  const { text } = await $.prompt.read()
+  if (parseRelay(text) !== null) return
+  await $.prompt.fill({ text: `>> ${text}`, mode: 'replace' })
 }
 
 function actionsFor($: EngineInterface): Actions {
   return {
-    askConsent: () => void dispatch($, { type: 'ask-consent' }),
     cancelConsent: () => void dispatch($, { type: 'cancel-consent' }),
     agree: () => void agree($),
-    disable: () => void dispatch($, { type: 'disable' }),
     stopSearch: () => void dispatch($, { type: 'stop-search' }),
-    say: text => void say($, text),
-    sayLast: text => void sayLast($, text),
+    reply: () => void reply($).catch(() => undefined),
+    skip: () => void dispatch($, { type: 'my-final', text: null }),
     leave: () => void dispatch($, { type: 'leave' }),
     block: () => void dispatch($, { type: 'block' }),
     report: () => void dispatch($, { type: 'report' }),
     reveal: id => void dispatch($, { type: 'reveal', id }),
+    dismiss: () => void dispatch($, { type: 'dismiss-notice' }),
   }
 }
 
-/** 開発用プレビュー: 会話を止め、パネルを見本の状態にして開く */
+/** 開発用プレビュー: 会話を止め、帯を見本の状態にする */
 async function showPreview($: EngineInterface, scene: Parameters<typeof previewView>[0]): Promise<void> {
   const { myLang } = await read($, view)
   const now = await $.clock.now()
   await dispatch($, { type: 'disable' })
   await update($, view, () => previewView(scene, myLang, now))
-  await $.ui.open({ id: PANE, title: 'Meanwhile', rows: PANE_ROWS })
+}
+
+/**
+ * 本体の入力欄に「>> 」で始めて打った文を、Claudeには渡さず相手に送る。
+ * 人が入力欄に打ったもの(origin: composer)だけが対象で、他のエージェントやタスクから
+ * 届いたプロンプトは送らない。Meanwhileがオフなら普通のプロンプトとして通す
+ */
+async function relay($: EngineInterface, body: string): Promise<{ drop: string } | null> {
+  const v = await read($, view)
+  if (v.phase === 'off' || v.phase === 'consent') return null
+  const copy = copyFor(v.myLang)
+  if (v.phase !== 'chatting' && v.phase !== 'final') return { drop: copy.relayNoPeer }
+  if (!body) return { drop: copy.relayEmpty }
+  const warning = checkOutgoing(body)
+  if (warning) return { drop: copy.draft[warning] }
+  if (v.phase === 'final') {
+    await dispatch($, { type: 'my-final', text: body })
+    return { drop: copy.relayFinalSent }
+  }
+  await dispatch($, { type: 'my-chat', id: nextId(), text: body, now: await $.clock.now() })
+  return { drop: copy.relaySent }
 }
 
 async function markNeedsYou($: EngineInterface, value: boolean): Promise<void> {
@@ -468,7 +475,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'meanwhile',
-      description: 'Claudeの作業中に、待っている誰かと匿名で話すパネルを開く(on / off)',
+      description: 'Claudeの作業中に、待っている誰かと匿名で話す(on / off)',
       argumentHint: '[on|off]',
     })
     const myLang = await resolveLanguage($)
@@ -480,7 +487,7 @@ export const register: Register = (on, options) => {
     if (devMode) {
       await $.tool.register({
         name: 'preview',
-        description: 'Meanwhile開発用: パネルを見本の状態にして描かせる(サイドカーは使わない)',
+        description: 'Meanwhile開発用: 入力欄の上の帯を見本の状態にして描かせる(サイドカーは使わない)',
         inputSchema: {
           type: 'object',
           properties: { scene: { type: 'string', enum: [...SCENES] } },
@@ -507,18 +514,27 @@ export const register: Register = (on, options) => {
       await showPreview($, scene)
       return { text: `meanwhile preview: ${scene}` }
     }
+    const copy = copyFor((await read($, view)).myLang)
     if (arg === 'off') {
       await dispatch($, { type: 'disable' })
-      return { text: 'meanwhile: off' }
+      return { text: copy.disabled }
     }
-    if (arg === 'on' && (await isConsented($))) {
+    const { phase } = await read($, view)
+    if (phase !== 'off' && phase !== 'consent') return { text: copy.enabled }
+    if (await isConsented($)) {
       await dispatch($, { type: 'enable' })
-    } else if (arg === 'on' || (await read($, view)).phase === 'off') {
-      await dispatch($, { type: 'ask-consent' })
+      return { text: copy.enabled }
     }
-    await $.ui.open({ id: PANE, title: 'Meanwhile', rows: PANE_ROWS })
-    return { text: 'meanwhile' }
+    // 同意画面は入力欄の上の帯に出す
+    await dispatch($, { type: 'ask-consent' })
+    return { text: copy.consentTitle }
   })
+
+  on('prompt.submit', async ($, e, next) => {
+    const body = e.origin.kind === 'composer' ? parseRelay(e.text) : null
+    if (body === null) return next(e)
+    return (await relay($, body)) ?? next(e)
+  }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
     const started = await next(e)
@@ -536,7 +552,7 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  // Claudeが許可や回答を求めたら、パネル上部にバナーを出す(状態は変えない)
+  // Claudeが許可や回答を求めたら、帯に一行出す(状態は変えない)
   on('classic.PermissionRequest', async ($, e, next) => {
     await markNeedsYou($, true)
     return next(e)
@@ -549,22 +565,22 @@ export const register: Register = (on, options) => {
     return result
   }).catch(($, e, next) => next(e))
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  // 会話は別の窓を開かず、本体の入力欄の真上の帯に出す
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
     const v = await read($, view)
     await read($, tick)
     const kit = $.ui.resolve(e)
-    return drawPane({
-      surface: e.surface as Surface,
-      // モバイルにはまだ入力欄が無い(表に名前はあっても何も描かれない)
-      kit: { Box: kit.Box, Text: kit.Text, Button: kit.Button, Input: e.surface !== 'mobile' && 'Input' in kit ? kit.Input : undefined },
+    const band = drawBand({
+      kit: { Box: kit.Box, Text: kit.Text, Button: kit.Button },
       view: v,
       now: await $.clock.now(),
       columns: e.props.bodyColumns,
-      rows: e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 30,
+      rows: e.props.maxRows,
       display: config.display,
-      matchDelaySeconds: config.settings.matchDelayMs / 1000,
       actions: actionsFor($),
     })
+    return band ?? next(e)
   })
 
   on('session.end', async ($, e, next) => {

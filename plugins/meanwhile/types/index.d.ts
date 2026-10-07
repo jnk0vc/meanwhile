@@ -1,4 +1,4 @@
-// Meanwhileの $.stateの型。会話ログはこのセッションのメモリにだけ置き、$.store(ディスク)には書かない。
+// Meanwhileの$.stateの型。会話ログはこのセッションのメモリにだけ置き、$.store(ディスク)にもトランスクリプトにも書かない。
 
 /** 待機 → 作業中 → マッチ待ち(→ 接続中)→ チャット中 → 最後の一言 */
 export type Phase = 'off' | 'consent' | 'idle' | 'working' | 'queued' | 'connecting' | 'chatting' | 'final'
@@ -56,12 +56,6 @@ export type View = {
   needsYou: boolean
   /** 状態の変わり目に一度だけ出す知らせ */
   notice: Notice | null
-  /** 送信前に止めた理由(APIキーらしき文字列など) */
-  draftWarning: DraftWarning | null
-  /** 入力欄に戻す下書き。止めた送信の本文 */
-  draft: string
-  /** 入力欄を作り直すための番号(送信後に空にする) */
-  inputGen: number
 }
 
 declare module 'claude-code' {

@@ -4,7 +4,7 @@
 import type { Line, View } from '../types'
 import { initialView } from './machine'
 
-export const SCENES = ['off', 'consent', 'idle', 'working', 'queued', 'chat', 'final', 'farewell', 'needs-you', 'refused'] as const
+export const SCENES = ['off', 'consent', 'idle', 'working', 'queued', 'chat', 'final', 'farewell', 'needs-you', 'left'] as const
 export type Scene = (typeof SCENES)[number]
 
 export function isScene(value: unknown): value is Scene {
@@ -73,7 +73,7 @@ export function previewView(scene: Scene, myLang: string, now: number): View {
       }
     case 'needs-you':
       return { ...chat, needsYou: true }
-    case 'refused':
-      return { ...chat, draft: 'これ使って sk-ant-api03-xxxxxxxxxxxx', draftWarning: 'secret', inputGen: 1 }
+    case 'left':
+      return { ...base, isWorking: false, isPaused: true, notice: 'you-left' }
   }
 }

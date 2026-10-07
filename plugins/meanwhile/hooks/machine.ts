@@ -36,7 +36,6 @@ export type MachineEvent =
   | { type: 'stop-search' }
   | { type: 'trouble'; notice: Notice; retry: boolean }
   | { type: 'needs-you'; value: boolean }
-  | { type: 'draft-refused'; text: string; warning: NonNullable<View['draftWarning']> }
   | { type: 'dismiss-notice' }
 
 export type Effect =
@@ -50,7 +49,7 @@ export type Effect =
   | { do: 'disarm' }
   | { do: 'translate'; id: string; text: string }
   | { do: 'moderate'; id: string; text: string }
-  | { do: 'open-pane' }
+  | { do: 'announce' }
   | { do: 'chime' }
   | { do: 'save-enabled'; value: boolean }
 
@@ -69,9 +68,6 @@ export function initialView(myLang: string, enabled: boolean): View {
     span: null,
     needsYou: false,
     notice: null,
-    draftWarning: null,
-    draft: '',
-    inputGen: 0,
   }
 }
 
@@ -79,7 +75,7 @@ const sameLanguage = (a: string, b: string | null) => b !== null && a.split('-')
 
 /** 会話の部屋を出たあとの共通処理。ログは消し、作業中なら次の相手を探しに戻る */
 function afterRoom(view: View, notice: Notice | null): [View, Effect[]] {
-  const base: View = { ...view, lines: [], peerLang: null, deadline: null, span: null, notice, draft: '', draftWarning: null }
+  const base: View = { ...view, lines: [], peerLang: null, deadline: null, span: null, notice }
   if (view.isWorking && !view.isPaused) return [{ ...base, phase: 'queued' }, [{ do: 'disarm' }, { do: 'join' }]]
   return [{ ...base, phase: 'idle' }, [{ do: 'disarm' }]]
 }
@@ -145,8 +141,8 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
           return [{ ...done, phase: 'idle', deadline: null, span: null }, [{ do: 'disarm' }, { do: 'leave' }]]
         case 'chatting':
           return [
-            { ...done, phase: 'final', deadline: event.now + settings.finalMs, span: settings.finalMs, draftWarning: null },
-            [{ do: 'arm', ms: settings.finalMs, timer: 'final' }, { do: 'open-pane' }],
+            { ...done, phase: 'final', deadline: event.now + settings.finalMs, span: settings.finalMs },
+            [{ do: 'arm', ms: settings.finalMs, timer: 'final' }, { do: 'announce' }],
           ]
         default:
           return [{ ...done, isPaused: false }, []]
@@ -164,8 +160,8 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
       // 退室を指示したあとに遅れて届いた接続は、そのまま閉じる
       if (view.phase !== 'queued' && view.phase !== 'connecting') return [view, [{ do: 'leave' }]]
       return [
-        { ...view, phase: 'chatting', peerLang: event.lang, lines: [], notice: null, draft: '', draftWarning: null },
-        [{ do: 'open-pane' }, { do: 'chime' }],
+        { ...view, phase: 'chatting', peerLang: event.lang, lines: [], notice: null },
+        [{ do: 'announce' }, { do: 'chime' }],
       ]
     case 'connect-failed':
       if (view.phase !== 'queued' && view.phase !== 'connecting') return [view, []]
@@ -214,7 +210,7 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
         at: event.now,
       }
       return [
-        { ...view, lines: [...view.lines, line].slice(-MAX_LINES), draft: '', draftWarning: null, inputGen: view.inputGen + 1 },
+        { ...view, lines: [...view.lines, line].slice(-MAX_LINES) },
         [{ do: 'send', text: event.text }],
       ]
     }
@@ -223,7 +219,7 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
       if (view.phase !== 'final') return [view, []]
       const text = event.type === 'my-final' ? event.text : null
       return [
-        { ...afterRoom(view, 'you-left')[0], phase: 'idle', inputGen: view.inputGen + 1 },
+        { ...afterRoom(view, 'you-left')[0], phase: 'idle' },
         [{ do: 'disarm' }, { do: 'final', text }],
       ]
     }
@@ -262,8 +258,6 @@ export function reduce(view: View, event: MachineEvent, settings: Settings): [Vi
     }
     case 'needs-you':
       return [{ ...view, needsYou: event.value }, []]
-    case 'draft-refused':
-      return [{ ...view, draft: event.text, draftWarning: event.warning, inputGen: view.inputGen + 1 }, []]
     case 'dismiss-notice':
       return [{ ...view, notice: null }, []]
   }

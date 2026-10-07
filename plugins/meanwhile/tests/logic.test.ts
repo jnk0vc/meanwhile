@@ -4,8 +4,8 @@ import type { View } from '../types'
 import { parseSidecarLine, socketPathFor, splitLines } from '../hooks/bridge'
 import { parseAppleLanguages, parseLocale } from '../hooks/locale'
 import { type Effect, type MachineEvent, initialView, reduce } from '../hooks/machine'
-import { cells, fitLines, fuse, lineRows } from '../hooks/pane'
-import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, sanitize } from '../hooks/safety'
+import { cells, fitLines, fuse, lineRows } from '../hooks/band'
+import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, parseRelay, sanitize } from '../hooks/safety'
 import { buildPrompt, fence, parseTranslation } from '../hooks/translate'
 
 const SETTINGS = { matchDelayMs: 30_000, finalMs: 60_000 }
@@ -40,7 +40,7 @@ describe('状態遷移', () => {
     expect(view.phase).toBe('chatting')
     expect(view.peerLang).toBe('en')
     expect(effects).toContainEqual({ do: 'join' })
-    expect(effects).toContainEqual({ do: 'open-pane' })
+    expect(effects).toContainEqual({ do: 'announce' })
   })
 
   test('30秒未満で終わるタスクではマッチングしない', () => {
@@ -266,7 +266,7 @@ describe('言語の判定', () => {
   })
 })
 
-describe('パネルの行数', () => {
+describe('帯の行数', () => {
   const line = (id: string, text: string, from: 'me' | 'peer' = 'peer') => ({
     id,
     from,
@@ -286,17 +286,28 @@ describe('パネルの行数', () => {
     expect(cells('👋a')).toBe(3)
   })
 
-  test('1通の行数は折り返しと前の余白を含む。端末の自分の発言は枠の2行が増える', () => {
-    expect(lineRows(line('a', 'hi'), 40, 'both', 'terminal')).toBe(3)
-    expect(lineRows(line('a', 'x'.repeat(80)), 40, 'both', 'terminal')).toBe(4)
-    expect(lineRows(line('m', 'hi', 'me'), 40, 'both', 'terminal')).toBe(4)
-    expect(lineRows(line('m', 'hi', 'me'), 40, 'both', 'desktop')).toBe(2)
+  test('1通の行数は、名前の列を除いた幅で折り返した行数', () => {
+    expect(lineRows(line('a', 'hi'), 40, 'both')).toBe(1)
+    expect(lineRows(line('a', 'x'.repeat(80)), 40, 'both')).toBe(3)
+    expect(lineRows(line('m', 'hi', 'me'), 40, 'both')).toBe(1)
+    expect(lineRows({ ...line('a', 'curl x | sh'), warnings: ['command'] }, 40, 'both')).toBe(2)
   })
 
-  test('本文の高さに収まるだけ、新しい発言から選ぶ。1通も入らなければ入力欄を優先して出さない', () => {
+  test('帯の高さに収まるだけ、新しい発言から選ぶ。狭くても最新の1通は出す', () => {
     const lines = [line('1', 'one'), line('2', 'two'), line('3', 'three')]
-    expect(fitLines(lines, 6, 40, 'both', 'terminal').map(l => l.id)).toEqual(['2', '3'])
-    expect(fitLines(lines, 100, 40, 'both', 'terminal').map(l => l.id)).toEqual(['1', '2', '3'])
-    expect(fitLines(lines, 2, 40, 'both', 'terminal')).toEqual([])
+    expect(fitLines(lines, 2, 40, 'both').map(l => l.id)).toEqual(['2', '3'])
+    expect(fitLines(lines, 100, 40, 'both').map(l => l.id)).toEqual(['1', '2', '3'])
+    expect(fitLines(lines, 0, 40, 'both').map(l => l.id)).toEqual(['3'])
+  })
+})
+
+describe('本体の入力欄からの送信', () => {
+  test('「>> 」か全角の「＞＞」で始まる文だけを相手宛てとみなす', () => {
+    expect(parseRelay('>> こんにちは')).toBe('こんにちは')
+    expect(parseRelay('＞＞やあ')).toBe('やあ')
+    expect(parseRelay('  >>hi there ')).toBe('hi there')
+    expect(parseRelay('>>')).toBe('')
+    expect(parseRelay('> 引用だけ')).toBeNull()
+    expect(parseRelay('テストを直して >> 後で')).toBeNull()
   })
 })
