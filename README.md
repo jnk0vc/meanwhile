@@ -8,8 +8,6 @@ Claude Codeが作業している間だけ、同じく待っている誰かと匿
 
 動画(mp4): [media/meanwhile-demo.mp4](media/meanwhile-demo.mp4)
 
-> **試験運用中です。** マッチングサーバーは`wss://meanwhile.jank0vic.com`で動いています。
-
 設計書: [docs/design.md](docs/design.md)
 
 ## 動き方

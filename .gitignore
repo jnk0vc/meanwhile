@@ -6,3 +6,5 @@ node_modules/
 plugins/meanwhile/.claude-plugin/types/
 # 開発用プレビューの有効化(scripts/dev-sync.sh が写した先にだけ置く)
 plugins/meanwhile/dev.json
+# 公開しない手元のメモ
+docs/private/
