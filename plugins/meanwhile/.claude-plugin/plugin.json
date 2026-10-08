@@ -19,8 +19,8 @@
       "type": "string",
       "title": "Seconds before matching",
       "description": "プロンプト送信から、相手を探し始めるまでの秒数",
-      "options": ["5", "15", "30", "45", "60", "90", "120"],
-      "default": "30"
+      "options": ["5", "10", "15", "30", "45", "60", "90", "120"],
+      "default": "10"
     },
     "finalSeconds": {
       "type": "string",

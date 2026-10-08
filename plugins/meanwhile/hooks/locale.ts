@@ -18,3 +18,19 @@ export function parseLocale(raw: string): string | null {
   const match = /^([a-z]{2,3})(?:[_.@-]|$)/.exec(raw.trim())
   return match ? match[1]! : null
 }
+
+/**
+ * LANGUAGE・LC_ALL・LC_MESSAGES・LANGの値をこの順に並べて渡し、言語を取り出す。
+ * gettextが文言の言語を選ぶのと同じ順で、前にあるものほど優先する。LANGUAGEは`ja:en`のような優先順の並びなので先頭から見る。
+ * `LC_ALL=C`のように言語でない値は飛ばして次を見る。ロケールとしてはCが効いていても、
+ * 本人が読む言語はLANGに残っていることが多いため
+ */
+export function languageFromEnv(values: readonly (string | undefined)[]): string | null {
+  for (const value of values) {
+    for (const item of (value ?? '').split(':')) {
+      const lang = parseLocale(item)
+      if (lang) return lang
+    }
+  }
+  return null
+}

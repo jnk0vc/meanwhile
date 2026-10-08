@@ -15,12 +15,19 @@ import {
   splitLines,
 } from './bridge'
 import { copyFor } from './copy'
-import { parseAppleLanguages, parseLocale } from './locale'
+import { languageFromEnv, parseAppleLanguages, parseLocale } from './locale'
 import { type Effect, type MachineEvent, type Settings, initialView, reduce } from './machine'
 import { type Actions, type Display, drawBand } from './band'
 import { SCENES, isScene, previewView } from './preview'
 import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, parseRelay, sanitize } from './safety'
-import { TRANSLATE_SYSTEM, TRANSLATE_TIMEOUT_MS, buildPrompt, parseTranslation } from './translate'
+import {
+  TRANSLATE_MAX_TOKENS,
+  TRANSLATE_MODEL,
+  TRANSLATE_SYSTEM,
+  TRANSLATE_TIMEOUT_MS,
+  buildPrompt,
+  parseTranslation,
+} from './translate'
 
 const view = atom({ plugin: 'meanwhile', key: 'view' } as const, initialView('en', false))
 const tick = atom({ plugin: 'meanwhile', key: 'tick' } as const, 0)
@@ -50,7 +57,7 @@ type Config = {
 // サイドカーとタイマーはモジュールの寿命に結びつく。読み込み直すと両方とも終わり、ここも初期化される
 let config: Config = {
   server: '',
-  settings: { matchDelayMs: 30_000, finalMs: 60_000 },
+  settings: { matchDelayMs: 10_000, finalMs: 60_000 },
   display: 'both',
   sound: false,
   language: undefined,
@@ -73,7 +80,7 @@ function configFrom(opts: Options): Config {
   return {
     server: (opts.server ?? '').trim().replace(/\/+$/, ''),
     settings: {
-      matchDelayMs: seconds(opts.matchDelay, 30, 5, 120) * 1000,
+      matchDelayMs: seconds(opts.matchDelay, 10, 5, 120) * 1000,
       finalMs: seconds(opts.finalSeconds, 60, 30, 180) * 1000,
     },
     display: opts.display === 'translated' || opts.display === 'original' ? opts.display : 'both',
@@ -104,15 +111,26 @@ function statusFor(v: View): string | undefined {
 }
 
 /**
- * 自分の言語。設定がautoなら、macOSのシステム設定の言語 → LC_ALL → LANG → Intlの順に決める。
- * macOSを先にするのは、デスクトップアプリではLANGが空のことが多いため
+ * 自分の言語。設定がautoなら次の順に決める。
+ * 1. macOSならシステム設定の言語。デスクトップアプリではLANGが空のことが多いため、環境変数より先に見る
+ * 2. 環境変数(LANGUAGE → LC_ALL → LC_MESSAGES → LANG)。Linuxはふつうここで決まる
+ * 3. Intl。WindowsはLANGを持たないので、OSの地域の設定からここで決まる
+ * 4. どれでも決まらなければ英語
  */
 async function resolveLanguage($: EngineInterface): Promise<string> {
   const setting = config.language
   if (setting && setting !== 'auto' && /^[a-z]{2,3}$/.test(setting)) return setting
-  const fromMac = await macLanguage($)
-  if (fromMac) return fromMac
-  const fromEnv = parseLocale((await $.env.get('LC_ALL')) || (await $.env.get('LANG')) || '')
+  if (await isMac($)) {
+    const fromMac = await macLanguage($)
+    if (fromMac) return fromMac
+  }
+  // $.env.getは読む変数を一覧にできるよう、名前をその場の文字列で書く必要がある
+  const fromEnv = languageFromEnv([
+    await $.env.get('LANGUAGE'),
+    await $.env.get('LC_ALL'),
+    await $.env.get('LC_MESSAGES'),
+    await $.env.get('LANG'),
+  ])
   if (fromEnv) return fromEnv
   try {
     const fromIntl = new Intl.DateTimeFormat().resolvedOptions().locale.split('-')[0]
@@ -123,7 +141,20 @@ async function resolveLanguage($: EngineInterface): Promise<string> {
   return 'en'
 }
 
-/** macOSのシステム設定で選んだ言語。macOS以外(defaultsが無い)ではnull */
+/**
+ * macOSで動いているか。LinuxでもGNUstepを入れると同名のdefaultsがあるので、コマンドの有無ではなくunameで見分ける。
+ * unameが無いWindowsではfalse
+ */
+async function isMac($: EngineInterface): Promise<boolean> {
+  try {
+    const { exitCode, stdout } = await $.process.run(['/usr/bin/uname', '-s'], { timeoutMs: 3_000 })
+    return exitCode === 0 && stdout.trim() === 'Darwin'
+  } catch {
+    return false
+  }
+}
+
+/** macOSのシステム設定で選んだ言語。読めなければnull */
 async function macLanguage($: EngineInterface): Promise<string | null> {
   for (const key of ['AppleLanguages', 'AppleLocale'] as const) {
     try {
@@ -232,10 +263,10 @@ async function translateLine($: EngineInterface, id: string, text: string): Prom
   const { myLang, peerLang } = await read($, view)
   const result = await $.model
     .complete({
-      model: 'haiku',
+      model: TRANSLATE_MODEL,
       system: TRANSLATE_SYSTEM,
       prompt: buildPrompt(text, peerLang ?? 'unknown', myLang),
-      maxTokens: 600,
+      maxTokens: TRANSLATE_MAX_TOKENS,
       effort: 'low',
       timeoutMs: TRANSLATE_TIMEOUT_MS,
     })

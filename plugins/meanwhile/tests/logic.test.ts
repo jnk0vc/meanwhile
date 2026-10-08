@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { View } from '../types'
 import { parseSidecarLine, socketPathFor, splitLines } from '../hooks/bridge'
-import { parseAppleLanguages, parseLocale } from '../hooks/locale'
+import { languageFromEnv, parseAppleLanguages, parseLocale } from '../hooks/locale'
 import { type Effect, type MachineEvent, initialView, reduce } from '../hooks/machine'
 import { cells, fitLines, fuse, lineRows } from '../hooks/band'
 import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, parseRelay, sanitize } from '../hooks/safety'
@@ -289,6 +289,15 @@ describe('言語の判定', () => {
     expect(parseLocale('C.UTF-8')).toBeNull()
     expect(parseLocale('POSIX')).toBeNull()
     expect(parseLocale('')).toBeNull()
+  })
+
+  // 引数はLANGUAGE, LC_ALL, LC_MESSAGES, LANGの順
+  test('環境変数はLANGUAGE → LC_ALL → LC_MESSAGES → LANGの順に見て、CやPOSIXは飛ばす', () => {
+    expect(languageFromEnv(['ko:en', 'ja_JP.UTF-8', undefined, 'en_US.UTF-8'])).toBe('ko')
+    expect(languageFromEnv(['C:ja', undefined, undefined, 'en_US.UTF-8'])).toBe('ja')
+    expect(languageFromEnv([undefined, 'C', undefined, 'ja_JP.UTF-8'])).toBe('ja')
+    expect(languageFromEnv([undefined, undefined, 'fr_FR.UTF-8', 'en_US.UTF-8'])).toBe('fr')
+    expect(languageFromEnv(['', 'C.UTF-8', 'POSIX', undefined])).toBeNull()
   })
 })
 

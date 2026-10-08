@@ -28,7 +28,7 @@ export type Env = {
   LOBBY: DurableObjectNamespace<Lobby>
   /** queue.joinに求めるproof-of-workの難しさ(先頭のゼロビット数) */
   POW_BITS?: string
-  /** IPをハッシュにするときの塩。未設定ならDOが初回に作って保存する */
+  /** IPをハッシュにするときのソルト。未設定ならDOが初回に作って保存する */
   IP_SALT?: string
 }
 
@@ -289,7 +289,7 @@ export class Lobby extends DurableObject<Env> {
     return Number.isInteger(bits) && bits >= 0 && bits <= 28 ? bits : 18
   }
 
-  /** IPは生のまま保存しない。塩つきハッシュの先頭16バイトだけを使う */
+  /** IPは生のまま保存しない。ソルト付きハッシュの先頭16バイトだけを使う */
   private async hashIp(request: Request): Promise<string> {
     const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
     if (this.salt === undefined) {
