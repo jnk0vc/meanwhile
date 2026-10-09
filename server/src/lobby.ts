@@ -174,6 +174,8 @@ export class Lobby extends DurableObject<Env> {
     }
     await this.ctx.storage.put(`room:${roomId}`, room)
     await this.ensureAlarm()
+    // Workers Logsでマッチ件数を数えるための記録。鍵・IP・部屋IDは載せない
+    console.log({ event: 'match.found' })
 
     this.send(partner.socket, { type: 'match.found', roomId, role: 'offer', peerKey: me.pubkey! })
     this.send(ws, { type: 'match.found', roomId, role: 'answer', peerKey: partner.pubkey })
