@@ -67,6 +67,8 @@ let starting: Promise<Bridge> | undefined
 let timer: Timer | undefined
 let ticker: Timer | undefined
 let needsYou = false
+// Claudeがバックグラウンドの作業(サブエージェント・コマンドなど)の終わりを待つためにターンを閉じたか
+let awaitsBackground = false
 // プラグインのフォルダにdev.jsonがあるときだけ、開発用プレビュー(ツールとコマンド)を使える
 let devMode = false
 let lineSeq = 0
@@ -575,16 +577,25 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     const started = await next(e)
+    awaitsBackground = false
     await dispatch($, { type: 'work-start', now: await $.clock.now() })
     return started
   })
+
+  // Stopはturn.completeの直前に来る。そこでバックグラウンドの作業が残っていれば、そのターンの終わりは途中経過
+  on('classic.Stop', async ($, e, next) => {
+    awaitsBackground = (e.background_tasks?.length ?? 0) > 0
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     // サブエージェントの終わりは、Claude本体の作業の終わりではない
     if (e.agentId === undefined) {
       needsYou = false
-      await dispatch($, { type: 'work-end', now: await $.clock.now() })
+      // バックグラウンドの作業が終われば、その知らせで次のターンが始まる。それまでは作業中のまま
+      if (!awaitsBackground) await dispatch($, { type: 'work-end', now: await $.clock.now() })
+      awaitsBackground = false
     }
     return done
   })

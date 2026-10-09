@@ -77,6 +77,7 @@ function host(on: On, options: HostOptions = {}) {
     return { text: e.text }
   })
   on('classic.PermissionRequest', () => ({}))
+  on('classic.Stop', () => ({}))
   // Modが帯に何も出さないとき(next)は、エンジンの帯として空の箱を返す
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Box({}))
   // $の操作(op)は{ value }で答える
@@ -219,6 +220,38 @@ test('作業中だけ相手を探し、帯で読んで本体の入力欄から�
   expect(commands).toContainEqual({ cmd: 'final', text: 'またね！' })
   expect(await band.find({ text: /退室しました/ })).toBeDefined()
   expect(await band.find({ text: /何を作ってるの/ })).toBeUndefined()
+  await band.unmount()
+})
+
+test('バックグラウンドの作業を待って閉じたターンでは探し続け、作業が残っていないターンの終わりで止める', OPTIONS, async ($, on) => {
+  const { clock, commands } = host(on, { enabled: true })
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })
+  await $.turn.start({ text: 'x', turnId: 't1' })
+  await clock.advance(15_000)
+  expect(await band.find({ text: /相手を探しています/ })).toBeDefined()
+
+  // サブエージェントやバックグラウンドのコマンドの終わりを待つために、Claudeがいったんターンを閉じる
+  const subagent = { id: 'a1', type: 'subagent', status: 'running', description: '調査' }
+  await $.classic.Stop({ stop_hook_active: false, background_tasks: [subagent], session_crons: [] })
+  await $.turn.complete({ answer: '調査を任せました', durationMs: 20_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(await band.find({ text: /相手を探しています/ })).toBeDefined()
+  expect(commands).not.toContainEqual({ cmd: 'leave' })
+
+  // 終わりの知らせで次のターンが始まっても、探し直さない
+  await $.turn.start({ text: '', turnId: 't2' })
+  const shell = { id: 'b1', type: 'shell', status: 'running', description: 'npm test', command: 'npm test' }
+  await $.classic.Stop({ stop_hook_active: false, background_tasks: [shell], session_crons: [] })
+  await $.turn.complete({ answer: 'テストを待っています', durationMs: 5_000, isAborted: false, turnId: 't2', reason: 'answer' })
+  expect(await band.find({ text: /相手を探しています/ })).toBeDefined()
+  expect(commands.filter(c => c.cmd === 'join')).toHaveLength(1)
+
+  // 作業が残っていない最後のターンの終わりで、探すのをやめる
+  await $.turn.start({ text: '', turnId: 't3' })
+  await $.classic.Stop({ stop_hook_active: false, background_tasks: [], session_crons: [] })
+  await $.turn.complete({ answer: '終わりました', durationMs: 5_000, isAborted: false, turnId: 't3', reason: 'answer' })
+  expect(await band.find({ text: /相手を探しています/ })).toBeUndefined()
+  expect(commands).toContainEqual({ cmd: 'leave' })
   await band.unmount()
 })
 
