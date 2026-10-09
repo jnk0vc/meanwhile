@@ -1,6 +1,6 @@
 {
   "name": "meanwhile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude Codeが作業している間だけ、同じく待っている誰かと匿名で1対1チャットできるmod。言語が違えばHaikuが翻訳する",
   "author": { "name": "jnk0vc", "url": "https://github.com/jnk0vc" },
   "homepage": "https://github.com/jnk0vc/meanwhile",
