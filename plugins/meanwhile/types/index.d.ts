@@ -58,11 +58,18 @@ export type View = {
   notice: Notice | null
 }
 
+/** 帯の入力欄(デスクトップ)で送信を止めたとき、欄に戻す文と止めた理由 */
+export type Draft = {
+  value: string
+  warning: DraftWarning | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     meanwhile: {
       view: View
       tick: number
+      draft: Draft
     }
   }
 }

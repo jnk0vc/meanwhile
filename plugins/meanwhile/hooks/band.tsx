@@ -1,12 +1,14 @@
 // プロンプトの真上に出す帯(AbovePrompt)の描画。状態(View)から木を作るだけで、状態は書き換えない。
 //
-// 会話は別の窓を開かず、本体の画面の中で行う。相手の発言はこの帯に出し、自分の発言は本体の
-// 入力欄に「>> 」で始めて送る。帯はトランスクリプトに入らないので、Claudeは読まず、手元にも残らない。
+// 会話は別の窓を開かず、本体の画面の中で行う。相手の発言はこの帯に出す。自分の発言は、デスクトップでは
+// 帯の入力欄から、端末などでは本体の入力欄に「>> 」で始めて送る。デスクトップで本体の入力欄を使うと、
+// 送った文がClaudeとの会話に吹き出しで残り、送信を止めた知らせも毎回出るため。
+// 帯はトランスクリプトに入らないので、Claudeは読まず、手元にも残らない。
 
 import type { Elements, RenderElement } from 'claude-code'
 
-import type { Line, Phase, View } from '../types'
-import { type Copy, copyFor, languageName } from './copy'
+import type { Draft, Line, Phase, View } from '../types'
+import { type Copy, type SendCopy, copyFor, languageName } from './copy'
 
 export type Display = 'both' | 'translated' | 'original'
 export type Surface = 'terminal' | 'desktop' | 'vscode' | 'mobile'
@@ -23,12 +25,16 @@ export type Actions = {
   report: () => void
   reveal: (id: string) => void
   dismiss: () => void
+  /** 帯の入力欄から送る(デスクトップ) */
+  send: (text: string) => void
 }
 
 type Kit = {
   Box: Elements['terminal']['Box']
   Text: Elements['terminal']['Text']
   Button: Elements['terminal']['Button']
+  /** 帯の入力欄。デスクトップだけで使う */
+  Input?: Elements['desktop']['Input']
 }
 
 // 本体のテーマに合わせる色はテーマキーで、Meanwhile独自の色だけ値で持つ。
@@ -222,12 +228,17 @@ export type BandInput = {
   rows: number
   display: Display
   actions: Actions
+  /** 帯の入力欄で送信を止めたときに、欄に戻す文と理由 */
+  draft: Draft
 }
 
 /** 何も出さないときはnull。待機中・オフで知らせもないとき */
-export function drawBand({ kit, view, surface, now, columns, rows, display, actions }: BandInput) {
-  const { Box, Text, Button } = kit
+export function drawBand({ kit, view, surface, now, columns, rows, display, actions, draft }: BandInput) {
+  const { Box, Text, Button, Input } = kit
   const copy = copyFor(view.myLang)
+  // 帯の入力欄から送るのはデスクトップだけ。端末は帯に移る手間があるので本体の入力欄に「>> 」のまま
+  const Field = surface === 'desktop' ? Input : undefined
+  const say: SendCopy = Field ? copy.field : copy
   const width = Math.max(24, columns)
   // 主な操作(返信・同意)だけ本体の主ボタンの見た目にし、他は控えめな文字のボタンにする
   const button = (key: string, label: string, onPress: () => void, primary = false): RenderElement =>
@@ -292,18 +303,22 @@ export function drawBand({ kit, view, surface, now, columns, rows, display, acti
         : ''
       // 1行目は狭い端末でも切れないよう短くし、最後の一言の説明は導火線の下に折り返せる行で出す
       const status = isFinal ? copy.phaseLabel.final : `${copy.someone} · ${langs}`
+      // 帯に入力欄があれば「返信」(本体の入力欄に「>> 」を入れる)は要らない
       const buttons = [
-        button('reply', copy.reply, actions.reply, true),
+        ...(Field ? [] : [button('reply', copy.reply, actions.reply, true)]),
         isFinal ? button('skip', copy.skip, actions.skip) : button('back', copy.back, actions.goBack),
         button('block', copy.block, actions.block),
         button('report', copy.report, actions.report),
       ]
-      // 1行目・導火線・案内・バナーを除いた残りに、新しい発言から詰める
+      const warning = Field && draft.warning ? copy.draft[draft.warning] : null
+      // 1行目・導火線・案内・入力欄・バナーを除いた残りに、新しい発言から詰める
       const workDone = !isFinal && !view.isWorking
       const fixed =
         2 +
-        (isFinal ? 1 + rowsOf(copy.finalPrompt, width) : 0) +
+        (isFinal ? 1 + rowsOf(say.finalPrompt, width) : 0) +
         (workDone ? rowsOf(copy.workDoneHint, width) : 0) +
+        (Field ? 1 : 0) +
+        (warning ? rowsOf(warning, width) : 0) +
         (view.needsYou ? 1 : 0) +
         (view.notice ? 1 : 0)
       const shown = fitLines(view.lines, rows - fixed, width, display)
@@ -311,17 +326,29 @@ export function drawBand({ kit, view, surface, now, columns, rows, display, acti
         <Box flexDirection="column" width={width}>
           {Head(kit, view, copy, status, buttons)}
           {isFinal ? Fuse(kit, view, now, width, copy) : null}
-          {isFinal ? <Text bold>{copy.finalPrompt}</Text> : null}
+          {isFinal ? <Text bold>{say.finalPrompt}</Text> : null}
           {workDone ? <Text bold>{copy.workDoneHint}</Text> : null}
           {view.needsYou ? (
             <Text color={NEEDS_YOU} bold>
               ! {copy.needsYou}
             </Text>
           ) : null}
-          {view.lines.length === 0 ? <Text color={MUTED}>{copy.connectedHint}</Text> : null}
+          {view.lines.length === 0 ? <Text color={MUTED}>{say.connectedHint}</Text> : null}
           {shown.map(line => LineView(kit, line, copy, display, actions))}
+          {/* 書く欄は会話のすぐ下に置き、読む順と書く順をそろえる。止めた文は欄に戻して理由を添える */}
+          {Field ? (
+            <Field
+              key="say"
+              placeholder={isFinal ? copy.field.finalPlaceholder : copy.field.placeholder}
+              submitLabel={isFinal ? copy.field.sendAndLeave : copy.field.send}
+              value={draft.value || undefined}
+              autoFocus
+              onSubmit={text => actions.send(text)}
+            />
+          ) : null}
+          {warning ? <Text color={BRICK}>{warning}</Text> : null}
           <Text color={MUTED} wrap="truncate-end">
-            {isFinal ? copy.bandFinalHint : copy.bandHint}
+            {isFinal ? say.bandFinalHint : say.bandHint}
           </Text>
         </Box>
       )

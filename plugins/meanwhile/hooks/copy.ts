@@ -2,7 +2,24 @@
 
 import type { DraftWarning, Notice, Phase } from '../types'
 
-export type Copy = {
+/** 送り方によって変わる案内。端末などは本体の入力欄に「>> 」、デスクトップは帯の入力欄から送る */
+export type SendCopy = {
+  connectedHint: string
+  bandHint: string
+  bandFinalHint: string
+  finalPrompt: string
+  toastConnected: string
+  toastFinal: string
+}
+
+export type Copy = SendCopy & {
+  /** 帯の入力欄から送るときの案内と、入力欄そのものの文言 */
+  field: SendCopy & {
+    placeholder: string
+    finalPlaceholder: string
+    send: string
+    sendAndLeave: string
+  }
   shareNote: string
   needsYou: string
   consentTitle: string
@@ -10,12 +27,7 @@ export type Copy = {
   agree: string
   cancel: string
   working: string
-  connectedHint: string
   phaseLabel: Record<Phase, string>
-  bandHint: string
-  bandFinalHint: string
-  toastConnected: string
-  toastFinal: string
   toastWorkDone: string
   workDoneHint: string
   back: string
@@ -25,7 +37,6 @@ export type Copy = {
   relayNoPeer: string
   relayEmpty: string
   stopSearch: string
-  finalPrompt: string
   someone: string
   you: string
   lastWord: string
@@ -57,7 +68,7 @@ const ja: Copy = {
   consentPoints: [
     '相手にはあなたのIPアドレスが見えます。直接つなぐためです',
     '書いたことは匿名の相手に届きます。未公開のアイディアを書くかはあなた次第です',
-    'プロンプト・コード・ツールの出力は送りません。送るのは、本体の入力欄に「>> 」で始めて打った文だけです',
+    'プロンプト・コード・ツールの出力は送りません。送るのは、相手宛てに打った文(帯の入力欄か、本体の入力欄に「>> 」で始めた文)だけです',
     '相手の言葉の翻訳には、あなたのClaudeの利用枠(Haiku)を使います',
     '相手の発言はこの帯に出るだけで、Claudeは読みません。退室すると消え、手元にも残りません',
     '18歳以上の方だけが使えます',
@@ -80,6 +91,18 @@ const ja: Copy = {
   bandFinalHint: '「>> 」で書いた一言を送ると退室します · 時間切れならスキップ扱い',
   toastConnected: 'Someoneとつながりました。「>> 」で話せます',
   toastFinal: 'Claudeの作業が終わりました。「>> 」で最後の一言を送れます',
+  field: {
+    connectedHint: 'Someoneとつながりました。相談したいことを下の欄に書いて、Enterで送ってください',
+    bandHint: 'Claudeには渡りません · アイディアは匿名の相手に共有されます',
+    bandFinalHint: '送ると退室します · 時間切れならスキップ扱い',
+    finalPrompt: '最後の一言を1回だけ送れます。送るかスキップすると戻ります',
+    toastConnected: 'Someoneとつながりました。入力欄の上の帯で話せます',
+    toastFinal: 'Claudeの作業が終わりました。帯から最後の一言を送れます',
+    placeholder: 'Someoneに送る',
+    finalPlaceholder: '最後の一言',
+    send: '送信',
+    sendAndLeave: '送って退室',
+  },
   toastWorkDone: 'Claudeの作業が終わりました。話し終わったら帯の[戻る]で戻れます',
   workDoneHint: 'Claudeの作業が終わりました。話し終わったら[戻る]で戻れます',
   back: '戻る',
@@ -138,7 +161,7 @@ const en: Copy = {
   consentPoints: [
     'The other person can see your IP address, because you connect directly',
     'What you write reaches an anonymous person. Whether to share unreleased ideas is up to you',
-    'Your prompts, code, and tool output are never sent. Only what you type in the main prompt starting with ">> " is',
+    'Your prompts, code, and tool output are never sent. Only what you write to them is (in the band\'s field, or in the main prompt starting with ">> ")',
     'Translating their messages uses your own Claude usage (Haiku)',
     'Their messages only appear in this band. Claude never reads them, and they disappear when you leave',
     'You must be 18 or older',
@@ -161,6 +184,18 @@ const en: Copy = {
   bandFinalHint: 'Send one line starting with ">> " to leave · Skipped when time runs out',
   toastConnected: 'Connected with Someone. Talk with ">> "',
   toastFinal: 'Claude is done. Send your last word with ">> "',
+  field: {
+    connectedHint: 'You are connected with Someone. Write below and press Enter to send',
+    bandHint: 'Not passed to Claude · Your ideas are shared with an anonymous person',
+    bandFinalHint: 'Sending it makes you leave · Skipped when time runs out',
+    finalPrompt: 'You can send one last word. Sending or skipping takes you back',
+    toastConnected: 'Connected with Someone. Talk in the band above the prompt',
+    toastFinal: 'Claude is done. Send your last word from the band',
+    placeholder: 'Message Someone',
+    finalPlaceholder: 'Your last word',
+    send: 'Send',
+    sendAndLeave: 'Send and leave',
+  },
   toastWorkDone: 'Claude is done. Press Back in the band when you are ready to go',
   workDoneHint: 'Claude is done. Press Back when you are ready to go',
   back: 'Back',

@@ -349,10 +349,58 @@ test('どのサーフェスでも帯を描ける', OPTIONS, async ($, on) => {
   await clock.settle()
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const band = await $.ui.mount({ plugin: 'meanwhile', surface, ...BAND })
-    expect(await band.find({ key: 'reply' }), surface).toBeDefined()
+    // 帯の入力欄から送るのはデスクトップだけ。他は「返信」で本体の入力欄に「>> 」を入れる
+    const isDesktop = surface === 'desktop'
+    expect(await band.find({ key: 'say' }), surface)[isDesktop ? 'toBeDefined' : 'toBeUndefined']()
+    expect(await band.find({ key: 'reply' }), surface)[isDesktop ? 'toBeUndefined' : 'toBeDefined']()
     expect(await band.find({ key: 'report' }), surface).toBeDefined()
     await band.unmount()
   }
+})
+
+test('デスクトップでは帯の入力欄から送り、本体の入力欄にもClaudeにも通さない', OPTIONS, async ($, on) => {
+  const { clock, sidecar, commands, toasts, entered, fills } = host(on, { enabled: true })
+  await $.session.start({ ...START, surface: 'desktop' })
+  const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'desktop', ...BAND })
+  await $.turn.start({ text: 'x', turnId: 't1' })
+  await clock.advance(15_000)
+  sidecar.push({ ev: 'connected', lang: 'ja' })
+  await clock.settle()
+  expect(toasts.some(t => t.includes('入力欄の上の帯で話せます'))).toBe(true)
+  expect(await band.find({ text: /下の欄に書いて、Enterで送って/ })).toBeDefined()
+  expect(await band.find({ text: /「>> 」/ })).toBeUndefined()
+
+  // 前後の空白は落として送る。空のEnterは何もしない
+  await band.input({ key: 'say', text: '  CLIのModを作ってます  ' })
+  await band.input({ key: 'say', text: '   ' })
+  expect(commands.filter(c => c.cmd === 'send')).toEqual([{ cmd: 'send', text: 'CLIのModを作ってます' }])
+  expect(await band.find({ type: 'Text', text: 'CLIのModを作ってます' })).toBeDefined()
+  expect(entered).toEqual([])
+  expect(fills).toEqual([])
+
+  // APIキーらしき文字列は止め、打った文を欄に戻して理由を欄の下に出す
+  const secret = 'これ使って sk-ant-api03-abcdefghijklmnop'
+  await band.input({ key: 'say', text: secret })
+  expect(commands.filter(c => c.cmd === 'send')).toHaveLength(1)
+  expect(await band.find({ text: /APIキー/ })).toBeDefined()
+  expect((await band.find({ key: 'say' }))?.props.value).toBe(secret)
+  // 直して送れば、理由は消えて欄も空に戻る
+  await band.input({ key: 'say', text: 'これ使って' })
+  expect(await band.find({ text: /APIキー/ })).toBeUndefined()
+  expect((await band.find({ key: 'say' }))?.props.value).toBeUndefined()
+
+  // 最後の一言も帯の入力欄から。送ると退室する
+  await $.turn.complete({ answer: 'done', durationMs: 60_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  await band.press({ key: 'back' })
+  expect(await band.find({ text: /最後の一言を1回だけ送れます/ })).toBeDefined()
+  expect((await band.find({ key: 'say' }))?.props.submitLabel).toBe('送って退室')
+  await band.input({ key: 'say', text: 'またね！' })
+  // 退室の後始末(サイドカーへの指示とタイマーの解除)は送信の後ろで続くので、終わるのを待つ
+  await clock.settle()
+  expect(commands).toContainEqual({ cmd: 'final', text: 'またね！' })
+  expect(await band.find({ text: /退室しました/ })).toBeDefined()
+  expect(entered).toEqual([])
+  await band.unmount()
 })
 
 for (const [name, env] of [

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { View } from '../types'
+import type { Draft, View } from '../types'
 import {
   type Bridge,
   type Command,
@@ -17,7 +17,7 @@ import {
 import { copyFor } from './copy'
 import { languageFromEnv, parseAppleLanguages, parseLocale } from './locale'
 import { type Effect, type MachineEvent, type Settings, initialView, reduce } from './machine'
-import { type Actions, type Display, drawBand } from './band'
+import { type Actions, type Display, type Surface, drawBand } from './band'
 import { SCENES, isScene, previewView } from './preview'
 import { checkOutgoing, defangUrls, detectWarnings, hasNgWord, parseRelay, sanitize } from './safety'
 import {
@@ -31,6 +31,8 @@ import {
 
 const view = atom({ plugin: 'meanwhile', key: 'view' } as const, initialView('en', false))
 const tick = atom({ plugin: 'meanwhile', key: 'tick' } as const, 0)
+const NO_DRAFT: Draft = { value: '', warning: null }
+const draft = atom({ plugin: 'meanwhile', key: 'draft' } as const, NO_DRAFT)
 
 const STORE_ENABLED = 'enabled'
 const STORE_CONSENT = 'consent'
@@ -69,6 +71,8 @@ let ticker: Timer | undefined
 let needsYou = false
 // Claudeがバックグラウンドの作業(サブエージェント・コマンドなど)の終わりを待つためにターンを閉じたか
 let awaitsBackground = false
+// トーストの案内を送り方に合わせる。デスクトップは帯の入力欄、他は本体の入力欄に「>> 」
+let surface: Surface = 'terminal'
 // プラグインのフォルダにdev.jsonがあるときだけ、開発用プレビュー(ツールとコマンド)を使える
 let devMode = false
 let lineSeq = 0
@@ -254,7 +258,8 @@ async function advance($: EngineInterface): Promise<void> {
 async function announce($: EngineInterface): Promise<void> {
   const { myLang, phase, isWorking } = await read($, view)
   const copy = copyFor(myLang)
-  $.ui.toast(phase === 'chatting' && !isWorking ? copy.toastWorkDone : phase === 'final' ? copy.toastFinal : copy.toastConnected)
+  const say = surface === 'desktop' ? copy.field : copy
+  $.ui.toast(phase === 'chatting' && !isWorking ? copy.toastWorkDone : phase === 'final' ? say.toastFinal : say.toastConnected)
 }
 
 /**
@@ -338,7 +343,8 @@ async function startSidecar($: EngineInterface): Promise<Bridge> {
       // 起動できなかった、または途中で落ちた
     }
     markFailed(new SidecarError('no-sidecar'))
-    await onSidecar($, { ev: 'exited' })
+    // セッションが終わって出力が閉じたときは$がもう使えず、知らせる先もない
+    await onSidecar($, { ev: 'exited' }).catch(() => undefined)
   })()
 
   await opened
@@ -400,6 +406,8 @@ async function onSidecar($: EngineInterface, event: SidecarEvent): Promise<void>
     case 'matched':
       return dispatch($, { type: 'matched' })
     case 'connected':
+      // 前の相手に向けて止めた文は、新しい相手の欄に持ち越さない
+      await update($, draft, () => NO_DRAFT)
       return dispatch($, { type: 'connected', lang: event.lang })
     case 'connect-failed':
       return dispatch($, { type: 'connect-failed' })
@@ -469,6 +477,7 @@ function actionsFor($: EngineInterface): Actions {
     report: () => void dispatch($, { type: 'report' }),
     reveal: id => void dispatch($, { type: 'reveal', id }),
     dismiss: () => void dispatch($, { type: 'dismiss-notice' }),
+    send: text => void sendFromBand($, text),
   }
 }
 
@@ -493,12 +502,24 @@ async function relay($: EngineInterface, body: string): Promise<{ drop: string }
   if (!body) return { drop: copy.relayEmpty }
   const warning = checkOutgoing(body)
   if (warning) return { drop: copy.draft[warning] }
-  if (v.phase === 'final') {
-    await dispatch($, { type: 'my-final', text: body })
-    return { drop: copy.relayFinalSent }
-  }
+  await sendToPeer($, v.phase, body)
+  return { drop: v.phase === 'final' ? copy.relayFinalSent : copy.relaySent }
+}
+
+/** 相手に送る。会話中なら1通、最後の一言の場面なら最後の一言として送って退室する */
+async function sendToPeer($: EngineInterface, phase: 'chatting' | 'final', body: string): Promise<void> {
+  if (phase === 'final') return dispatch($, { type: 'my-final', text: body })
   await dispatch($, { type: 'my-chat', id: nextId(), text: body, now: await $.clock.now() })
-  return { drop: copy.relaySent }
+}
+
+/** 帯の入力欄(デスクトップ)から送る。止めたときは打った文を欄に戻し、理由を欄の下に出す */
+async function sendFromBand($: EngineInterface, text: string): Promise<void> {
+  const body = text.trim()
+  const { phase } = await read($, view)
+  if (!body || (phase !== 'chatting' && phase !== 'final')) return
+  const warning = checkOutgoing(body)
+  await update($, draft, () => (warning ? { value: text, warning } : NO_DRAFT))
+  if (!warning) await sendToPeer($, phase, body)
 }
 
 async function markNeedsYou($: EngineInterface, value: boolean): Promise<void> {
@@ -521,6 +542,9 @@ export const register: Register = (on, options) => {
     const enabled = (await $.store.get(STORE_ENABLED)) === true && (await isConsented($))
     // 読み込み直しでサイドカーは終わっているので、会話の状態も最初からにする
     await update($, view, () => initialView(myLang, enabled))
+    await update($, draft, () => NO_DRAFT)
+    // 画面のない起動(claude -p)ではnull。帯も出ないので、端末と同じ案内にしておく
+    surface = e.surface ?? 'terminal'
     $.ui.status(undefined)
     devMode = await $.fs.exists(`${$.plugin.root}/dev.json`)
     if (devMode) {
@@ -620,7 +644,7 @@ export const register: Register = (on, options) => {
     await read($, tick)
     const kit = $.ui.resolve(e)
     const band = drawBand({
-      kit: { Box: kit.Box, Text: kit.Text, Button: kit.Button },
+      kit: { Box: kit.Box, Text: kit.Text, Button: kit.Button, Input: 'Input' in kit ? kit.Input : undefined },
       view: v,
       surface: e.surface,
       now: await $.clock.now(),
@@ -628,6 +652,7 @@ export const register: Register = (on, options) => {
       rows: e.props.maxRows,
       display: config.display,
       actions: actionsFor($),
+      draft: await read($, draft),
     })
     return band ?? next(e)
   })
