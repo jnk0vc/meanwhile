@@ -26,9 +26,14 @@ The mod sends only text you address to the other person: what you type in the ba
   - the person you are matched with, directly over a WebRTC data channel. Conversation text goes only here.
 - **Translation** is a one-off `$.model.complete` request to `claude-haiku-5-5`, made by Claude Code with your own Claude usage, with no tools, no history and no `CLAUDE.md`.
 
+### Command-like text in received messages
+
+`hooks/safety.ts` contains patterns such as `| sh`, `curl`, `npx` and `iex`. They are used only to spot text in a message from the other person that looks like a shell command (or a long Base64 blob), so that the band shows "Looks like a command. Don't run it" under that message. The mod never runs any of them. Links in received messages are also shown broken up (`https[:]//example[.]com`) so that the terminal does not make them clickable.
+
 ### What it reads
 
 - **Environment variables:** `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` to choose your language; `TMPDIR` to place the control socket; `PATH` and `HOME` to find Node.js. None of these are sent anywhere.
+- **Files and folders:** only to find Node.js. `$.fs.exists` checks each Node.js path listed under [Programs it runs](#programs-it-runs), and `$.fs.list` reads the folder names in `~/.nvm/versions/node` (the Node.js versions installed with nvm). No file contents are read, and none of this is sent anywhere.
 - **The prompt box:** `$.prompt.read` is used only by the band's Reply button, to check whether the prompt already starts with `>> ` before adding it. The prompt's text is not sent.
 - **Submitted prompts:** see `prompt.submit` below.
 
@@ -44,6 +49,8 @@ The mod runs these programs directly, by their argument vector, never through a 
 | `<node> <plugin folder>/sidecar/meanwhile-sidecar.mjs` | Start the helper process that handles WebRTC and the WebSocket to the matching server |
 
 `<node>` is the first Node.js 22+ found, checked in this order (each path is checked to exist before it is run): each directory in `PATH`; `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`; then under `HOME`, the usual places of Volta, asdf, mise, nodenv, fnm and nvm.
+
+The mod gives the helper process three environment variables: `MEANWHILE_SOCKET` (the path of the control socket), `MEANWHILE_SERVER` (the `server` option) and `MEANWHILE_TOKEN`. `MEANWHILE_TOKEN` is not one of your credentials and is not read from your environment or files. It is 32 random bytes that the mod makes with `crypto.getRandomValues` each time it starts the helper. The helper only compares it with the `x-meanwhile-token` header of requests on the control socket, so that no other process on the machine can drive the helper. It is never sent to the matching server, the STUN servers or the other person.
 
 The helper process is the bundled build of the source in [`sidecar/`](https://github.com/jnk0vc/meanwhile/tree/main/sidecar) with its dependency [werift](https://github.com/shinyoshiaki/werift-webrtc). It is shipped as plain-text, minified JavaScript files under 256 KiB each (`sidecar/meanwhile-sidecar.mjs` and `sidecar/chunks/`), built by `npm run build` in the repository; the licenses of the bundled packages are in `sidecar/meanwhile-sidecar.mjs.LEGAL.txt`. It downloads and runs nothing else, and it ends when the mod is reloaded or Claude Code exits.
 
