@@ -5,6 +5,7 @@
   "author": { "name": "jnk0vc", "url": "https://github.com/jnk0vc" },
   "homepage": "https://github.com/jnk0vc/meanwhile",
   "repository": "https://github.com/jnk0vc/meanwhile",
+  "privacyPolicyUrl": "https://github.com/jnk0vc/meanwhile/blob/main/PRIVACY.md",
   "license": "MIT",
   "keywords": ["mod", "pane", "chat", "webrtc", "translation"],
   "types": "./types/index.d.ts",

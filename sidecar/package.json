@@ -14,7 +14,7 @@
     "typescript": "7.0.2"
   },
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --minify --legal-comments=linked --outfile=../plugins/meanwhile/sidecar/meanwhile-sidecar.mjs --banner:js=\"import { createRequire as __mwRequire } from 'node:module'; const require = __mwRequire(import.meta.url);\"",
+    "build": "node build.mjs",
     "typecheck": "tsc -p .",
     "test": "node --test test/*.test.ts"
   },

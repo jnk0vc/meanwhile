@@ -9,11 +9,13 @@ import {
   SidecarError,
   type SidecarEvent,
   isSupportedNode,
+  nodeCandidates,
   parseSidecarLine,
   randomHex,
   socketPathFor,
   splitLines,
 } from './bridge'
+import { chimeBase64 } from './chime'
 import { copyFor } from './copy'
 import { languageFromEnv, parseAppleLanguages, parseLocale } from './locale'
 import { type Effect, type MachineEvent, type Settings, initialView, reduce } from './machine'
@@ -160,19 +162,20 @@ async function isMac($: EngineInterface): Promise<boolean> {
   }
 }
 
-/** macOSのシステム設定で選んだ言語。読めなければnull */
+/**
+ * macOSのシステム設定で選んだ言語。読めなければnull。
+ * 実行するコマンドを一覧にできるよう、引数はその場の文字列で書く
+ */
 async function macLanguage($: EngineInterface): Promise<string | null> {
-  for (const key of ['AppleLanguages', 'AppleLocale'] as const) {
-    try {
-      const { exitCode, stdout } = await $.process.run(['/usr/bin/defaults', 'read', '-g', key], { timeoutMs: 3_000 })
-      if (exitCode !== 0) continue
-      const lang = key === 'AppleLanguages' ? parseAppleLanguages(stdout) : parseLocale(stdout)
-      if (lang) return lang
-    } catch {
-      return null
-    }
+  try {
+    const languages = await $.process.run(['/usr/bin/defaults', 'read', '-g', 'AppleLanguages'], { timeoutMs: 3_000 })
+    const lang = languages.exitCode === 0 ? parseAppleLanguages(languages.stdout) : null
+    if (lang) return lang
+    const locale = await $.process.run(['/usr/bin/defaults', 'read', '-g', 'AppleLocale'], { timeoutMs: 3_000 })
+    return locale.exitCode === 0 ? parseLocale(locale.stdout) : null
+  } catch {
+    return null
   }
-  return null
 }
 
 async function isConsented($: EngineInterface): Promise<boolean> {
@@ -186,10 +189,10 @@ async function dispatch($: EngineInterface, event: MachineEvent): Promise<void> 
   let effects: Effect[] = []
   let after: View | undefined
   await update($, view, current => {
-    const [next, produced] = reduce(current, event, config.settings)
+    const [nextView, produced] = reduce(current, event, config.settings)
     effects = produced
-    after = next
-    return next
+    after = nextView
+    return nextView
   })
   if (after) $.ui.status(statusFor(after))
   for (const effect of effects) await perform($, effect)
@@ -233,7 +236,7 @@ async function perform($: EngineInterface, effect: Effect): Promise<void> {
     case 'announce':
       return announce($)
     case 'chime':
-      if (config.sound) await $.audio.play({ asset: 'sounds/chime.wav' }).catch(() => undefined)
+      if (config.sound) await $.audio.play({ base64: chimeBase64(), mime: 'audio/wav' }).catch(() => undefined)
       return
     case 'save-enabled':
       await $.store.set(STORE_ENABLED, effect.value)
@@ -268,8 +271,9 @@ async function announce($: EngineInterface): Promise<void> {
  */
 async function translateLine($: EngineInterface, id: string, text: string): Promise<void> {
   const { myLang, peerLang } = await read($, view)
-  const result = await $.model
-    .complete({
+  let parsed: ReturnType<typeof parseTranslation> = null
+  try {
+    const result = await $.model.complete({
       model: TRANSLATE_MODEL,
       system: TRANSLATE_SYSTEM,
       prompt: buildPrompt(text, peerLang ?? 'unknown', myLang),
@@ -277,33 +281,43 @@ async function translateLine($: EngineInterface, id: string, text: string): Prom
       effort: 'low',
       timeoutMs: TRANSLATE_TIMEOUT_MS,
     })
-    .catch(() => null)
-  const parsed = result?.isAnswered ? parseTranslation(result.text) : null
-  await dispatch(
-    $,
-    parsed ? { type: 'translated', id, text: parsed.translated, flagged: parsed.flagged } : { type: 'translate-failed', id },
-  )
+    if (result.isAnswered) parsed = parseTranslation(result.text)
+  } catch {
+    // 翻訳できなかったときは原文だけを出す
+  }
+  const event: MachineEvent = parsed
+    ? { type: 'translated', id, text: parsed.translated, flagged: parsed.flagged }
+    : { type: 'translate-failed', id }
+  await dispatch($, event)
 }
 
 // ---- サイドカー ----
 
-/** Node 22以降を探す。デスクトップアプリはPATHが短いことがあるので、ログインシェルにも聞く */
-async function findNode($: EngineInterface): Promise<string | null> {
-  const candidates: string[] = []
+/** nvmで入れたNodeの版のフォルダ名。nvmが無ければ空 */
+async function nvmVersions($: EngineInterface, home: string | undefined): Promise<string[]> {
+  if (!home?.startsWith('/')) return []
   try {
-    const found = await $.process.run(['/bin/sh', '-lc', 'command -v node'], { timeoutMs: 5_000 })
-    const path = found.stdout.trim().split('\n').pop()
-    if (found.exitCode === 0 && path?.startsWith('/')) candidates.push(path)
+    const entries = await $.fs.list(`${home}/.nvm/versions/node`)
+    return entries.map(entry => entry.name)
   } catch {
-    // シェルが使えない環境。よくある場所を試す
+    return []
   }
-  candidates.push('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node')
-  for (const node of [...new Set(candidates)]) {
+}
+
+/**
+ * Node 22以降を探す。シェルは起動せず、PATHとよくある置き場所にあるnodeを順に`--version`で確かめる。
+ * 候補の並びはnodeCandidatesを参照
+ */
+async function findNode($: EngineInterface): Promise<string | null> {
+  const home = await $.env.get('HOME')
+  const candidates = nodeCandidates(await $.env.get('PATH'), home, await nvmVersions($, home))
+  for (const node of candidates) {
     try {
+      if (!(await $.fs.exists(node))) continue
       const { exitCode, stdout } = await $.process.run([node, '--version'], { timeoutMs: 5_000 })
       if (exitCode === 0 && isSupportedNode(stdout)) return node
     } catch {
-      // その場所には無い
+      // その場所のnodeは動かない。次を試す
     }
   }
   return null
@@ -369,7 +383,8 @@ async function ensureBridge($: EngineInterface): Promise<Bridge> {
 
 async function call($: EngineInterface, target: Bridge, body: Command): Promise<Reply> {
   try {
-    const response = await $.http.fetch('http://meanwhile.sock/', {
+    // 送り先は同じマシンのサイドカーだけ。リクエストはUnixソケットを通り、ネットワークには出ない
+    const response = await $.http.fetch('http://localhost/', {
       method: 'POST',
       socketPath: target.socketPath,
       headers: { 'content-type': 'application/json', 'x-meanwhile-token': target.token },
@@ -458,7 +473,7 @@ async function goBack($: EngineInterface): Promise<void> {
 }
 
 /** 「返信」: 本体の入力欄の先頭に「>> 」を足す。打ちかけの下書きは残す */
-async function reply($: EngineInterface): Promise<void> {
+async function prefillReply($: EngineInterface): Promise<void> {
   const { text } = await $.prompt.read()
   if (parseRelay(text) !== null) return
   await $.prompt.fill({ text: `>> ${text}`, mode: 'replace' })
@@ -469,7 +484,7 @@ function actionsFor($: EngineInterface): Actions {
     cancelConsent: () => void dispatch($, { type: 'cancel-consent' }),
     agree: () => void agree($),
     stopSearch: () => void dispatch($, { type: 'stop-search' }),
-    reply: () => void reply($).catch(() => undefined),
+    reply: () => void prefillReply($).catch(() => undefined),
     skip: () => void dispatch($, { type: 'my-final', text: null }),
     leave: () => void dispatch($, { type: 'leave' }),
     goBack: () => void goBack($),

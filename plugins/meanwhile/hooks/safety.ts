@@ -9,8 +9,9 @@ export const MAX_TEXT = 200
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|\u001b[@-_]|\u009b[0-?]*[ -/]*[@-~]/g
 // 改行以外の制御文字(C0 / DEL / C1)
 const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g
-// ゼロ幅文字・文字の向きを変える制御文字・異体字セレクタ以外の不可視の書式文字
-const INVISIBLE = /[­؜ᅟᅠ᠎​-‏‪-‮⁠-⁯ㅤ﻿￹-￻]/g
+// ゼロ幅文字・文字の向きを変える制御文字・異体字セレクタ以外の不可視の書式文字。
+// 見えない文字そのものをソースに置かないよう、すべて\uで書く
+const INVISIBLE = /[\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\ufff9-\ufffb]/g
 
 /**
  * 表示してよい純粋なテキストにする。エスケープ列・制御文字・不可視の書式文字を除き、
@@ -39,8 +40,8 @@ export function defangUrls(text: string): string {
 }
 
 const COMMAND_PATTERNS: readonly RegExp[] = [
-  /\b(?:curl|wget|iwr|irm)\b[^\n]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i,
-  /\|\s*(?:sudo\s+)?(?:ba|z)?sh\b/i,
+  // シェルへのパイプ。ダウンロードしてそのまま実行する形もここで拾う
+  /\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i,
   /\b(?:bash|sh|zsh)\s+-c\b/i,
   /\bsudo\s+\S/i,
   /\brm\s+-[a-z]*[rf]/i,
@@ -54,7 +55,7 @@ const COMMAND_PATTERNS: readonly RegExp[] = [
   /\bcargo\s+install\b/i,
   /\bgit\s+clone\b/i,
   /\b(?:powershell|pwsh)\b|\biex\b|Invoke-Expression/i,
-  /\beval\s*\(|\$\([^)]*\)|`[^`]*\b(?:curl|wget|sh|bash|rm)\b[^`]*`/i,
+  /\beval\s*\(|\$\([^)]*\)|`[^`]*\b(?:bash|sh|rm|curl|wget)\b[^`]*`/i,
   /\b(?:base64|openssl)\s+(?:-d|--decode|enc)\b/i,
   /\bclaude\s+(?:-p|--dangerously|mcp\s+add)\b/i,
   /\/dev\/tcp\/|\bnc\s+-e\b|\bmkfifo\b/i,

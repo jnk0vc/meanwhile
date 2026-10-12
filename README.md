@@ -48,7 +48,7 @@ modの実行環境にはソケットがないため、WebRTCとWebSocketはサ�
 ## 必要なもの
 
 - Claude Code(modの読み込みに対応した版)
-- Node.js 22以降(サイドカーの実行に使います。デスクトップアプリでも、ログインシェルの`PATH`から探します)
+- Node.js 22以降(サイドカーの実行に使います。シェルは起動せず、`PATH`の各フォルダ、Homebrewとシステムの置き場所、バージョン管理ツール(Volta・asdf・mise・nodenv・fnm・nvm)の置き場所の順に探します)
 - macOSまたはLinux(サイドカーとの通信にUnixソケットを使うため、Windowsには未対応です。WindowsではWSL2の中で動かします。「[Windowsで使う](#windowsで使う)」を参照)
 - UDPで外へ出られるネットワーク(TURNを置いていないため、UDPが塞がれた環境ではつながりません)
 
@@ -135,6 +135,10 @@ WindowsのClaude Codeでは、サイドカーとの通信に使うUnixソケッ�
 
 受け取ったものは表の使い道にだけ使い、Workers Logsの記録は障害の調査とマッチ件数の集計にだけ使います。
 
+このほか、サイドカーは外向きのアドレスを知るためにSTUNサーバー(`stun.l.google.com:19302`と`stun.cloudflare.com:3478`)に問い合わせるので、STUNサーバーにはIPアドレスが届きます。本文は届きません。
+
+英語のプライバシーポリシーは[PRIVACY.md](PRIVACY.md)に、公式ディレクトリ向けの説明(実行するコマンド・通信先・フックの役割)は[plugins/meanwhile/README.md](plugins/meanwhile/README.md)にあります。
+
 ## マッチングサーバー
 
 `server/`はCloudflare Worker + Durable Objectです。待機列は言語を混ぜたFIFOの1本で、Durable Objectは世界に1つです。WebSocketはHibernation APIで受けるため、待機中の接続は課金されにくくなっています。
@@ -160,7 +164,7 @@ npx wrangler deploy
 
 ```bash
 npm run install:all   # サイドカーとサーバーの依存を入れる
-npm run build         # サイドカーを plugins/meanwhile/sidecar/ に1ファイルでビルドする
+npm run build         # サイドカーを plugins/meanwhile/sidecar/ にビルドする(エントリーと分割したchunks/)
 npm run typecheck
 npm test              # サーバー・サイドカー・modのテスト
 npm run e2e           # wrangler devと本物のサイドカー3つで、マッチから最後の一言まで通す
@@ -176,7 +180,7 @@ node scripts/peer.mjs --lang en          # 相手役。標準入力の1行がチ
 
 `scripts/dev-sync.sh`が写した先では、サーバーがローカルに向き、マッチ開始が5秒になり、開発用プレビューが有効になります(`dev.json`を置くため)。プレビューは`/meanwhile preview <状態>`か`mcp__meanwhile__preview`ツールで、サイドカーなしに帯を`chat`・`final`・`consent`などの状態にして描かせます。配布物には`dev.json`を含めないので、プレビューは出ません。
 
-サイドカーのビルド結果(`plugins/meanwhile/sidecar/meanwhile-sidecar.mjs`)はリポジトリに含めます。インストールしたmodが`npm install`なしで動くようにするためです。依存はバージョンを固定し(`.npmrc`の`save-exact`)、自動更新しません。同梱した依存のライセンスは`meanwhile-sidecar.mjs.LEGAL.txt`にあります。
+サイドカーのビルド結果(`plugins/meanwhile/sidecar/`の`meanwhile-sidecar.mjs`と`chunks/`)はリポジトリに含めます。インストールしたmodが`npm install`なしで動くようにするためです。公式ディレクトリの検査は256KiBを超えるファイルを途中までしか読まないため、`sidecar/build.mjs`で1ファイル256KiB以下に分けて出力します。超えるとビルドが失敗します。依存はバージョンを固定し(`.npmrc`の`save-exact`)、自動更新しません。同梱した依存のライセンスは`meanwhile-sidecar.mjs.LEGAL.txt`にあります。
 
 ## 設計書との違い
 

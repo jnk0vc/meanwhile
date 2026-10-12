@@ -98,6 +98,39 @@ export function isSupportedNode(version: string): boolean {
   return Number.isInteger(major) && major >= MIN_NODE_MAJOR
 }
 
+/** nvmの版のフォルダ名(v22.4.0)を新しい順に並べる。版の形でない名前は除く */
+export function sortNodeVersions(names: readonly string[]): string[] {
+  const versions = names.flatMap(name => {
+    const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(name)
+    return m ? [{ name, major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) }] : []
+  })
+  return versions
+    .sort((a, b) => b.major - a.major || b.minor - a.minor || b.patch - a.patch)
+    .map(v => v.name)
+}
+
+/**
+ * nodeの置き場所の候補を、試す順に並べる。PATHの順を先に、次にHomebrewとOSの置き場所、
+ * 最後にバージョン管理ツール(Volta・asdf・mise・nodenv・fnm・nvm)の置き場所。
+ * デスクトップアプリから起動するとPATHが短いことがあるため、PATHに無い場所も見る
+ */
+export function nodeCandidates(path: string | undefined, home: string | undefined, nvmVersions: readonly string[]): string[] {
+  const fromPath = (path ?? '').split(':').filter(dir => dir.startsWith('/')).map(dir => `${dir.replace(/\/+$/, '')}/node`)
+  const system = ['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node']
+  const managers = home?.startsWith('/')
+    ? [
+        `${home}/.volta/bin/node`,
+        `${home}/.asdf/shims/node`,
+        `${home}/.local/share/mise/shims/node`,
+        `${home}/.nodenv/shims/node`,
+        `${home}/.local/share/fnm/aliases/default/bin/node`,
+        `${home}/Library/Application Support/fnm/aliases/default/bin/node`,
+        ...sortNodeVersions(nvmVersions).map(v => `${home}/.nvm/versions/node/${v}/bin/node`),
+      ]
+    : []
+  return [...new Set([...fromPath, ...system, ...managers])]
+}
+
 /** 標準出力の断片を行に分ける。読み残しは次の断片とつなぐ */
 export function splitLines(buffer: string, piece: string): { lines: string[]; rest: string } {
   const joined = buffer + piece
